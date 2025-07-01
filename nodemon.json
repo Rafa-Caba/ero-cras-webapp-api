@@ -1,0 +1,12 @@
+{
+    "watch": [
+        "server.js",
+        "routes",
+        "models"
+    ],
+    "ext": "js,json",
+    "ignore": [
+        "uploads",
+        "node_modules"
+    ]
+}
