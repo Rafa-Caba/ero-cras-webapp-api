@@ -3,6 +3,8 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const loginRoutes = require('./routes/login');
+const themesRoutes = require('./routes/themes');
+
 require('dotenv').config();
 
 const app = express();
@@ -16,6 +18,7 @@ app.use('/api/cantos', require('./routes/cantos'));
 app.use('/api/usuarios', require('./routes/usuarios'));
 // app.use('/api/imagenes', require('./routes/imagenes'));
 app.use('/api/uploads', require('./routes/uploads'));
+app.use('/api/themes', themesRoutes);
 
 // Carpeta Publica para las imagenes
 app.use('/uploads', express.static('uploads'));

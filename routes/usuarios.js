@@ -152,10 +152,6 @@ router.put('/:id', verificarToken, upload.single('fotoPerfil'), async (req, res)
     try {
         const { nombre, username, correo, password, rol } = req.body;
 
-        console.log({
-            nombre, username, correo, password, rol
-        });
-
         const urlImagen = req.file ? `${req.protocol}://${req.get('host')}/uploads/images_members/${req.file.filename}` : undefined;
 
         // Solo actualiza si hay cambios (para no pisar con undefined)

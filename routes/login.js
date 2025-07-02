@@ -6,8 +6,6 @@ const verificarToken = require('../middlewares/auth');
 const Usuario = require('../models/Usuario');
 const RefreshToken = require('../models/RefreshToken');
 
-
-
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
@@ -39,9 +37,6 @@ router.post('/', async (req, res) => {
 
         // Guarda en Mongo
         await RefreshToken.create({ token: refreshToken, userId: usuario._id });
-
-        console.log(accessToken);
-        console.log(refreshToken);
 
         res.json({
             mensaje: 'Login exitoso',
