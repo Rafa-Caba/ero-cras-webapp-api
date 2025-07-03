@@ -16,7 +16,12 @@ export const app: Application = express();
 // Middlewares
 app.use(cors({
     origin: (origin, callback) => {
-        const whitelist = ['http://localhost:5173', 'https://ero-cras-webapp.vercel.app'];
+        const whitelist = [
+            'http://localhost:5173',
+            'https://ero-cras-webapp.vercel.app',
+            'https://ero-cras-webapp-api-production.up.railway.app'
+        ];
+
         if (!origin || whitelist.includes(origin)) {
             callback(null, true);
         } else {
