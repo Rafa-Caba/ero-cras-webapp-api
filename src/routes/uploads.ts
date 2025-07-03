@@ -131,7 +131,7 @@ router.delete('/:id', verificarToken, async (req: Request, res: Response, next: 
 // Patch para campos individuales tipo destacar/logo/etc
 router.patch('/marcar/:campo/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const campo = req.params.campo;
-    const id = req.params.id;
+    const id = req.params.id.trim();
 
     try {
         const camposValidos = ['imagenInicio', 'imagenLeftMenu', 'imagenRightMenu', 'imagenNosotros', 'imagenLogo'];
