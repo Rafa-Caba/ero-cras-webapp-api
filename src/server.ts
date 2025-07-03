@@ -14,7 +14,18 @@ import uploadsRoutes from './routes/uploads';
 export const app: Application = express();
 
 // Middlewares
-app.use(cors());
+app.use(cors({
+    origin: (origin, callback) => {
+        const whitelist = ['http://localhost:5173', 'https://ero-cras-webapp.vercel.app'];
+        if (!origin || whitelist.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true
+}));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
