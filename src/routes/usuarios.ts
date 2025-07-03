@@ -1,13 +1,15 @@
-const express = require('express');
+// routes/usuarios.ts (versión TypeScript)
+
+import express, { Request, Response } from 'express';
+import multer, { FileFilterCallback } from 'multer';
+import bcrypt from 'bcrypt';
+import fs from 'fs';
+import path from 'path';
+
+import verificarToken from '../middlewares/auth';
+import Usuario from '../models/Usuario';
+
 const router = express.Router();
-const multer = require('multer');
-const bcrypt = require('bcrypt');
-const fs = require('fs');
-const path = require('path');
-
-const verificarToken = require('../middlewares/auth');
-const Usuario = require('../models/Usuario');
-
 
 // Configuración de Multer
 const storage = multer.diskStorage({
@@ -20,31 +22,33 @@ const storage = multer.diskStorage({
 
 const upload = multer({
     storage,
-    fileFilter: (req, file, cb) => {
+    fileFilter: (req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
         const ext = path.extname(file.originalname).toLowerCase();
-        if (ext === '.jpg' || ext === '.jpeg' || ext === '.png' || ext === '.gif') {
+        if (['.jpg', '.jpeg', '.png', '.gif'].includes(ext)) {
             cb(null, true);
         } else {
-            cb(new Error('Solo se permiten imágenes'), false);
+            cb(new Error('Solo se permiten imágenes'));
         }
     }
 });
 
-
 // Registrar nuevo usuario con imagen
-router.post('/', upload.single('fotoPerfil'), async (req, res) => {
+router.post('/', upload.single('fotoPerfil'), async (req: Request, res: Response): Promise<void> => {
     try {
         const { nombre, username, correo, password, rol } = req.body;
 
         if (!nombre || !username || !correo || !password) {
-            return res.status(400).json({ mensaje: 'Todos los campos son obligatorios' });
+            res.status(400).json({ mensaje: 'Todos los campos son obligatorios' });
+            return;
         }
 
         const existe = await Usuario.findOne({
             $or: [{ username: username.toLowerCase() }, { correo }]
         });
+
         if (existe) {
-            return res.status(409).json({ mensaje: 'El usuario o correo ya existe' });
+            res.status(409).json({ mensaje: 'El usuario o correo ya existe' });
+            return;
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -53,7 +57,7 @@ router.post('/', upload.single('fotoPerfil'), async (req, res) => {
             nombre,
             username: username.toLowerCase(),
             correo,
-            password: hashedPassword, // 👈 Guarda el hash, no la password en texto plano
+            password: hashedPassword,
             rol,
             fotoPerfilUrl: req.file ? `${req.protocol}://${req.get('host')}/uploads/images_members/${req.file.filename}` : ''
         });
@@ -71,26 +75,22 @@ router.post('/', upload.single('fotoPerfil'), async (req, res) => {
                 fotoPerfilUrl: nuevoUsuario.fotoPerfilUrl
             }
         });
-
-    } catch (error) {
+    } catch (error: any) {
         res.status(400).json({ mensaje: error.message });
     }
 });
 
-
 // GET /api/usuarios/buscar?q=rafa
-router.get('/buscar', verificarToken, async (req, res) => {
+router.get('/buscar', verificarToken, async (req: Request, res: Response): Promise<void> => {
     const query = req.query.q?.toString().trim();
 
-    // console.log('query: ' + query);
-
     if (!query) {
-        return res.status(400).json({ mensaje: 'Consulta vacía' });
+        res.status(400).json({ mensaje: 'Consulta vacía' });
+        return;
     }
 
     try {
-        const regex = new RegExp(query, 'i'); // insensible a mayúsculas/minúsculas
-
+        const regex = new RegExp(query, 'i');
         const usuarios = await Usuario.find({
             $or: [
                 { nombre: regex },
@@ -105,12 +105,11 @@ router.get('/buscar', verificarToken, async (req, res) => {
     }
 });
 
-
 // GET paginado de usuarios
-router.get('/', verificarToken, async (req, res) => {
+router.get('/', verificarToken, async (req: Request, res: Response): Promise<void> => {
     try {
-        const pagina = parseInt(req.query.page) || 1;
-        const limite = parseInt(req.query.limit) || 5;
+        const pagina = parseInt(req.query.page as string) || 1;
+        const limite = parseInt(req.query.limit as string) || 5;
         const skip = (pagina - 1) * limite;
 
         const [usuarios, total] = await Promise.all([
@@ -125,38 +124,31 @@ router.get('/', verificarToken, async (req, res) => {
             totalUsuarios: total
         });
     } catch (error) {
-        console.error('Error al obtener los usuarios:', error);
         res.status(500).json({ mensaje: 'Error al obtener los usuarios' });
     }
 });
 
-
-// Obtener Un usuario
-router.get('/:id', verificarToken, async (req, res) => {
+// Obtener un usuario
+router.get('/:id', verificarToken, async (req: Request, res: Response): Promise<void> => {
     try {
         const usuario = await Usuario.findById(req.params.id);
-
         if (!usuario) {
-            return res.status(404).json({ mensaje: 'Usuario no encontrado' });
+            res.status(404).json({ mensaje: 'Usuario no encontrado' });
+            return;
         }
-
         res.json(usuario);
-    } catch (error) {
+    } catch (error: any) {
         res.status(500).json({ mensaje: error.message });
     }
 });
 
-
-// Actualizar
-router.put('/:id', verificarToken, upload.single('fotoPerfil'), async (req, res) => {
+// Actualizar usuario
+router.put('/:id', verificarToken, upload.single('fotoPerfil'), async (req: Request, res: Response): Promise<void> => {
     try {
         const { nombre, username, correo, password, rol } = req.body;
-
         const urlImagen = req.file ? `${req.protocol}://${req.get('host')}/uploads/images_members/${req.file.filename}` : undefined;
 
-        // Solo actualiza si hay cambios (para no pisar con undefined)
-        const updateFields = {};
-
+        const updateFields: Record<string, any> = {};
         if (nombre) updateFields.nombre = nombre;
         if (username) updateFields.username = username;
         if (correo) updateFields.correo = correo;
@@ -171,23 +163,23 @@ router.put('/:id', verificarToken, upload.single('fotoPerfil'), async (req, res)
         );
 
         res.json(actualizado);
-    } catch (error) {
+    } catch (error: any) {
         res.status(400).json({ mensaje: error.message });
     }
 });
 
-
-// Eliminar
-router.delete('/:id', verificarToken, async (req, res) => {
+// Eliminar usuario
+router.delete('/:id', verificarToken, async (req: Request, res: Response): Promise<void> => {
     try {
         const usuario = await Usuario.findById(req.params.id);
-        if (!usuario) return res.status(404).json({ mensaje: 'Usuario no encontrado' });
+        if (!usuario) {
+            res.status(404).json({ mensaje: 'Usuario no encontrado' });
+            return;
+        }
 
-        // Eliminar archivo de imagen si existe
         if (usuario.fotoPerfilUrl) {
             const fileName = usuario.fotoPerfilUrl.split('/').pop();
-            const filePath = path.join(__dirname, '..', 'uploads', 'images_members', fileName);
-
+            const filePath = path.join(__dirname, '..', 'uploads', 'images_members', fileName || '');
             fs.unlink(filePath, (err) => {
                 if (err && err.code !== 'ENOENT') {
                     console.error('Error eliminando imagen de usuario:', err);
@@ -197,10 +189,9 @@ router.delete('/:id', verificarToken, async (req, res) => {
 
         await Usuario.findByIdAndDelete(req.params.id);
         res.json({ mensaje: 'Usuario y su imagen eliminados correctamente' });
-
-    } catch (error) {
+    } catch (error: any) {
         res.status(500).json({ mensaje: error.message });
     }
 });
 
-module.exports = router;
+export default router;
