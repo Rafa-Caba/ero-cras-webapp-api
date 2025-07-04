@@ -9,6 +9,7 @@ import loginRoutes from './routes/login';
 import themesRoutes from './routes/themes';
 import cantosRoutes from './routes/cantos';
 import usuariosRoutes from './routes/usuarios';
+import miembrosRoutes from './routes/miembros';
 import uploadsRoutes from './routes/uploads';
 
 export const app: Application = express();
@@ -38,6 +39,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/login', loginRoutes);
 app.use('/api/cantos', cantosRoutes);
 app.use('/api/usuarios', usuariosRoutes);
+app.use('/api/miembros', miembrosRoutes);
 
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/themes', themesRoutes);

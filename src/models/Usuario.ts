@@ -6,6 +6,7 @@ export interface IUsuario extends Document {
     correo: string;
     password: string;
     fotoPerfilUrl?: string;
+    fotoPerfilPublicId?: string;
     rol: 'admin' | 'editor' | 'viewer';
     createdAt?: Date;
     updatedAt?: Date;
@@ -36,6 +37,10 @@ const UsuarioSchema = new Schema<IUsuario>(
         fotoPerfilUrl: {
             type: String,
             default: ''
+        },
+        fotoPerfilPublicId: {
+            type: String,
+            default: null
         },
         rol: {
             type: String,

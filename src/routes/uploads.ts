@@ -1,14 +1,13 @@
-import express, { Application, NextFunction, Request, Response } from 'express';
+import express, { NextFunction, Request, Response } from 'express';
 import verificarToken from '../middlewares/auth';
 import cloudinary from '../utils/cloudinary';
-import { uploadCloud } from '../middlewares/cloudinaryStorage';
+import { uploadGalleryImage } from '../middlewares/cloudinaryStorage';
 import Imagen from '../models/Imagen';
-import { app } from '../server';
 
 const router = express.Router();
 
 // Crear imagen (Cloudinary)
-router.post('/', verificarToken, uploadCloud.single('imagen'), async (req: Request, res: Response) => {
+router.post('/', verificarToken, uploadGalleryImage.single('imagen'), async (req: Request, res: Response) => {
     try {
         if (!req.file) {
             res.status(400).json({ mensaje: 'No se recibió imagen' });
@@ -70,7 +69,7 @@ router.get('/:id', verificarToken, async (req: Request, res: Response, next: Nex
 });
 
 // Actualizar imagen
-router.put('/:id', verificarToken, uploadCloud.single('imagen'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.put('/:id', verificarToken, uploadGalleryImage.single('imagen'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { titulo, descripcion, imagenLeftMenu, imagenRightMenu, imagenNosotros, imagenLogo } = req.body;
     const imagenId = req.params.id;
 
@@ -134,7 +133,15 @@ router.patch('/marcar/:campo/:id', async (req: Request, res: Response, next: Nex
     const id = req.params.id.trim();
 
     try {
-        const camposValidos = ['imagenInicio', 'imagenLeftMenu', 'imagenRightMenu', 'imagenNosotros', 'imagenLogo'];
+        const camposValidos = [
+            'imagenInicio',
+            'imagenLeftMenu',
+            'imagenRightMenu',
+            'imagenNosotros',
+            'imagenLogo',
+            'imagenGaleria'
+        ];
+
         if (!camposValidos.includes(campo)) {
             res.status(400).json({ mensaje: 'Campo inválido' });
             return;
@@ -143,14 +150,50 @@ router.patch('/marcar/:campo/:id', async (req: Request, res: Response, next: Nex
         const update: Partial<Record<string, boolean>> = {};
         update[campo] = true;
 
-        // Desmarcar el campo en otras imágenes
-        await Imagen.updateMany({ [campo]: true }, { $set: { [campo]: false } });
+        // ✅ Solo desmarcar otras si el campo es exclusivo (no para imagenGaleria)
+        if (campo !== 'imagenGaleria') {
+            await Imagen.updateMany({ [campo]: true }, { $set: { [campo]: false } });
+        }
 
         const imagenActualizada = await Imagen.findByIdAndUpdate(id, { $set: update }, { new: true });
+
         res.json({ mensaje: `Campo ${campo} actualizado`, imagen: imagenActualizada });
     } catch (err) {
         res.status(500).json({ mensaje: (err as Error).message });
     }
 });
+
+router.patch('/marcar/imagenGaleria/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    console.log('Valor recibido:', req.body.valor);
+
+    const id = req.params.id.trim();
+    const { valor } = req.body; // Esperamos { valor: true } o { valor: false }
+
+    if (typeof valor !== 'boolean') {
+        res.status(400).json({ mensaje: 'Valor debe ser booleano (true o false)' });
+        return;
+    }
+
+    try {
+        const imagenActualizada = await Imagen.findByIdAndUpdate(
+            id,
+            { $set: { imagenGaleria: valor } },
+            { new: true }
+        );
+
+        if (!imagenActualizada) {
+            res.status(404).json({ mensaje: 'Imagen no encontrada' });
+            return;
+        }
+
+        res.json({
+            mensaje: `Campo imagenGaleria actualizado a ${valor}`,
+            imagen: imagenActualizada,
+        });
+    } catch (err) {
+        res.status(500).json({ mensaje: (err as Error).message });
+    }
+});
+
 
 export default router;
