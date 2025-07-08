@@ -7,6 +7,19 @@ import Miembro from '../models/Miembro';
 
 const router = express.Router();
 
+// En routes/miembros.ts
+router.get('/publicos', async (req: Request, res: Response): Promise<void> => {
+    try {
+        const miembros = await Miembro.find()
+            .select('nombre instrumento tieneVoz fotoPerfilUrl');
+
+        // res.json({ miembros: Array.isArray(miembros) ? miembros : Object.values(miembros) });
+        res.json(miembros);
+    } catch (err: any) {
+        res.status(500).json({ mensaje: 'Error al obtener miembros', error: err.message });
+    }
+});
+
 // Buscar miembros
 router.get('/buscar', verificarToken, async (req: Request, res: Response): Promise<void> => {
     const query = req.query.q?.toString().trim();

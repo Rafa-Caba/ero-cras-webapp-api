@@ -11,6 +11,10 @@ import cantosRoutes from './routes/cantos';
 import usuariosRoutes from './routes/usuarios';
 import miembrosRoutes from './routes/miembros';
 import uploadsRoutes from './routes/uploads';
+import blogPostRoutes from './routes/blogPosts';
+import avisoRoutes from './routes/avisos';
+import settingRoutes from './routes/settings';
+import { ensureSettingsExists } from './utils/initSettings';
 
 export const app: Application = express();
 
@@ -43,6 +47,9 @@ app.use('/api/miembros', miembrosRoutes);
 
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/themes', themesRoutes);
+app.use('/api/blog-posts', blogPostRoutes);
+app.use('/api/avisos', avisoRoutes);
+app.use('/api/settings', settingRoutes);
 
 // 404 para rutas no encontradas
 app.use((req: Request, res: Response) => {
@@ -69,7 +76,8 @@ if (!MONGO_URI) {
 }
 
 mongoose.connect(MONGO_URI)
-    .then(() => {
+    .then(async () => {
+        await ensureSettingsExists();
         app.listen(PORT, () => {
             console.log(`Servidor listo en el puerto ${PORT}`);
         });

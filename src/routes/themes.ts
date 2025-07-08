@@ -1,32 +1,50 @@
 import express, { Request, Response } from 'express';
 import Theme from '../models/Theme';
+import verificarToken from '../middlewares/auth';
 
 const router = express.Router();
 
-// Obtener todos los colores del tema con paginación
-router.get('/', async (req: Request, res: Response): Promise<void> => {
+// Ruta pública para obtener todos los temas sin paginación
+router.get('/public', async (req: Request, res: Response): Promise<void> => {
     try {
-        const page = parseInt(req.query.page as string) || 1;
-        const limit = parseInt(req.query.limit as string) || 6;
-        const skip = (page - 1) * limit;
+        const temas = await Theme.find().sort({ createdAt: -1 });
+        res.json({ temas });
+    } catch (err: any) {
+        res.status(500).json({ msg: 'Error al obtener los temas públicos', error: err.message });
+    }
+});
 
-        const totalTemas = await Theme.countDocuments();
-        const totalPaginas = Math.ceil(totalTemas / limit);
+// Obtener todos los colores del tema (con o sin paginación)
+router.get('/', verificarToken, async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { all } = req.query;
 
-        const temas = await Theme.find().skip(skip).limit(limit);
+        if (all === 'true') {
+            const temas = await Theme.find();
+            res.json({ temas, totalTemas: temas.length });
+        } else {
+            const page = parseInt(req.query.page as string) || 1;
+            const limit = parseInt(req.query.limit as string) || 6;
+            const skip = (page - 1) * limit;
 
-        res.json({
-            temas,
-            paginaActual: page,
-            totalPaginas
-        });
+            const totalTemas = await Theme.countDocuments();
+            const totalPaginas = Math.ceil(totalTemas / limit);
+
+            const temas = await Theme.find().skip(skip).limit(limit);
+
+            res.json({
+                temas,
+                paginaActual: page,
+                totalPaginas
+            });
+        }
     } catch (err: any) {
         res.status(500).json({ msg: 'Error al obtener los temas', error: err.message });
     }
 });
 
 // Obtener una clase de color por ID
-router.get('/:id', async (req: Request, res: Response): Promise<void> => {
+router.get('/:id', verificarToken, async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
         const color = await Theme.findById(id);
@@ -41,7 +59,7 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
 });
 
 // Actualizar una clase de color por ID
-router.put('/:id', async (req: Request, res: Response): Promise<void> => {
+router.put('/:id', verificarToken, async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
         const { nombre, colorClass, color } = req.body;
@@ -64,7 +82,7 @@ router.put('/:id', async (req: Request, res: Response): Promise<void> => {
 });
 
 // Crear una nueva clase de color
-router.post('/new', async (req: Request, res: Response): Promise<void> => {
+router.post('/new', verificarToken, async (req: Request, res: Response): Promise<void> => {
     try {
         const { nombre, color, colorClass } = req.body;
         const existente = await Theme.findOne({ colorClass });
@@ -82,7 +100,7 @@ router.post('/new', async (req: Request, res: Response): Promise<void> => {
 });
 
 // Eliminar una clase de color
-router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
+router.delete('/:id', verificarToken, async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
         await Theme.findByIdAndDelete(id);

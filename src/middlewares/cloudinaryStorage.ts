@@ -53,3 +53,37 @@ export const uploadMiembroImage = multer({
         } as any
     })
 });
+
+// 🆕 Upload para blog posts
+export const uploadBlogImage = multer({
+    storage: new CloudinaryStorage({
+        cloudinary,
+        params: {
+            folder: 'ero-cras-imagenes/blogposts',
+            allowed_formats: ['jpg', 'png', 'jpeg', 'gif'],
+            public_id: (req: Request, file: Express.Multer.File): string => {
+                const nombre = file.originalname.split('.')[0];
+                const timestamp = Date.now();
+                return `post_${nombre}_${timestamp}`;
+            },
+            transformation: [{ width: 1000, height: 1000, crop: 'limit' }]
+        } as any
+    })
+});
+
+// 🆕 Upload para avisos
+export const uploadAvisoImage = multer({
+    storage: new CloudinaryStorage({
+        cloudinary,
+        params: {
+            folder: 'ero-cras-imagenes/avisos',
+            allowed_formats: ['jpg', 'png', 'jpeg', 'gif'],
+            public_id: (req: Request, file: Express.Multer.File): string => {
+                const nombre = file.originalname.split('.')[0];
+                const timestamp = Date.now();
+                return `aviso_${nombre}_${timestamp}`;
+            },
+            transformation: [{ width: 1000, height: 1000, crop: 'limit' }]
+        } as any
+    })
+});

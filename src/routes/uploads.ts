@@ -6,6 +6,16 @@ import Imagen from '../models/Imagen';
 
 const router = express.Router();
 
+// Ruta pública: Obtener todas las imágenes (sin paginación)
+router.get('/public', async (req: Request, res: Response) => {
+    try {
+        const imagenes = await Imagen.find().sort({ createdAt: -1 });
+        res.json({ imagenes });
+    } catch (error) {
+        res.status(500).json({ mensaje: 'Error al obtener las imágenes públicas' });
+    }
+});
+
 // Crear imagen (Cloudinary)
 router.post('/', verificarToken, uploadGalleryImage.single('imagen'), async (req: Request, res: Response) => {
     try {
@@ -31,6 +41,7 @@ router.post('/', verificarToken, uploadGalleryImage.single('imagen'), async (req
         res.status(400).json({ mensaje: err.message });
     }
 });
+
 
 // Obtener imágenes con paginación
 router.get('/', verificarToken, async (req: Request, res: Response) => {

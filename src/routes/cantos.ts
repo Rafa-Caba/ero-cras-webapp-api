@@ -4,6 +4,16 @@ import Canto from '../models/Canto';
 
 const router = express.Router();
 
+// Ruta pública: Obtener todos los cantos
+router.get('/public', async (_req: Request, res: Response) => {
+    try {
+        const cantos = await Canto.find().sort({ createdAt: -1 });
+        res.json(cantos);
+    } catch (error: any) {
+        res.status(500).json({ mensaje: error.message });
+    }
+});
+
 // Crear canto
 router.post('/', verificarToken, async (req: Request, res: Response): Promise<void> => {
     try {
