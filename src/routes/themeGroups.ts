@@ -78,8 +78,8 @@ router.post('/new', verificarToken, async (req: Request, res: Response): Promise
     try {
         const { nombre, colores } = req.body;
 
-        if (!Array.isArray(colores) || colores.length !== 9) {
-            res.status(400).json({ msg: 'El grupo debe contener exactamente 9 colores.' });
+        if (!Array.isArray(colores)) {
+            res.status(400).json({ msg: 'El grupo debe tener colores.' });
             return;
         }
 
@@ -115,8 +115,8 @@ router.put('/:id', verificarToken, async (req: Request, res: Response): Promise<
     try {
         const { nombre, colores } = req.body;
 
-        if (!Array.isArray(colores) || colores.length !== 9) {
-            res.status(400).json({ msg: 'El grupo debe contener exactamente 9 colores.' });
+        if (!Array.isArray(colores)) {
+            res.status(400).json({ msg: 'El grupo debe contener colores.' });
             return;
         }
 

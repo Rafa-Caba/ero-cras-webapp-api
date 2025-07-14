@@ -14,6 +14,7 @@ const gruposIniciales = [
             { nombre: 'Color de la Navegacion', colorClass: 'nav', color: '#f3e3fb' },
             { nombre: 'Hover del Boton General', colorClass: 'btn-general-hover', color: '#8a36f8' },
             { nombre: 'Color de la Navegacion - Hover', colorClass: 'nav-link-hover', color: '#b68fe6' },
+            { nombre: 'Color de los Formularios', colorClass: 'form-color', color: '#c5b9cc' },
             { nombre: 'Color del texto', colorClass: 'text-color', color: '#000000' },
         ]
     },
@@ -30,6 +31,7 @@ const gruposIniciales = [
             { nombre: 'Color de la Navegacion', colorClass: 'nav', color: '#271c3a' },
             { nombre: 'Hover del Boton General', colorClass: 'btn-general-hover', color: '#a966ff' },
             { nombre: 'Color de la Navegacion - Hover', colorClass: 'nav-link-hover', color: '#a966ff' },
+            { nombre: 'Color de los Formularios', colorClass: 'form-color', color: '#888888' },
             { nombre: 'Color del texto', colorClass: 'text-color', color: '#ffffff' },
         ]
     },
@@ -46,6 +48,7 @@ const gruposIniciales = [
             { nombre: 'Color de la Navegacion', colorClass: 'nav', color: '#f4edff' },
             { nombre: 'Hover del Boton General', colorClass: 'btn-general-hover', color: '#c499f9' },
             { nombre: 'Color de la Navegacion - Hover', colorClass: 'nav-link-hover', color: '#dabcf9' },
+            { nombre: 'Color de los Formularios', colorClass: 'form-color', color: '#f3ecf9' },
             { nombre: 'Color del texto', colorClass: 'text-color', color: '#000000' },
         ]
     }
