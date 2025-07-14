@@ -4,6 +4,9 @@ import cloudinary from '../utils/cloudinary';
 import { uploadAvisoImage } from '../middlewares/cloudinaryStorage';
 import verificarToken from '../middlewares/auth';
 import Aviso from '../models/Aviso';
+import { setActualizadoPor, setCreadoPor } from '../utils/setCreadoPor';
+import { applyPopulateAutores, applyPopulateAutorSingle } from '../utils/populateHelpers';
+import { registrarLog } from '../utils/registrarLog';
 
 const router = express.Router();
 
@@ -16,7 +19,8 @@ router.get('/buscar', verificarToken, async (req: Request, res: Response): Promi
 
     try {
         const regex = new RegExp(query, 'i');
-        const avisos = await Aviso.find({ titulo: regex });
+        const avisos = await applyPopulateAutores(Aviso.find({ titulo: regex }));
+
         res.json(avisos);
     } catch (error) {
         res.status(500).json({ mensaje: 'Error en la búsqueda' });
@@ -30,7 +34,7 @@ router.get('/', verificarToken, async (req: Request, res: Response) => {
         const skip = (pagina - 1) * limit;
 
         const [avisos, total] = await Promise.all([
-            Aviso.find().sort({ createdAt: -1 }).skip(skip).limit(limit),
+            applyPopulateAutores(Aviso.find().sort({ createdAt: -1 }).skip(skip).limit(limit)),
             Aviso.countDocuments()
         ]);
 
@@ -42,7 +46,8 @@ router.get('/', verificarToken, async (req: Request, res: Response) => {
 
 router.get('/:id', verificarToken, async (req: Request, res: Response): Promise<void> => {
     try {
-        const aviso = await Aviso.findById(req.params.id);
+        const aviso = await applyPopulateAutorSingle(Aviso.findById(req.params.id));
+
         if (!aviso) {
             res.status(404).json({ mensaje: 'Aviso no encontrado' });
             return;
@@ -54,7 +59,7 @@ router.get('/:id', verificarToken, async (req: Request, res: Response): Promise<
     }
 });
 
-router.post('/', verificarToken, uploadAvisoImage.single('imagen'), async (req: Request, res: Response): Promise<void> => {
+router.post('/', verificarToken, setCreadoPor, uploadAvisoImage.single('imagen'), async (req: Request, res: Response): Promise<void> => {
     try {
         const { titulo, contenido, publicado } = req.body;
 
@@ -72,36 +77,68 @@ router.post('/', verificarToken, uploadAvisoImage.single('imagen'), async (req: 
         });
 
         await nuevoAviso.save();
+
+        if (!nuevoAviso._id) return;
+
+        // Registrando en Logs
+        await registrarLog({
+            req,
+            coleccion: 'Avisos',
+            accion: 'crear',
+            referenciaId: nuevoAviso._id.toString(),
+            cambios: { nuevoAviso }
+        });
+
         res.status(200).json({ mensaje: 'Aviso creado exitosamente', aviso: nuevoAviso });
     } catch (error) {
         res.status(500).json({ mensaje: 'Error al crear aviso' });
     }
 });
 
-router.put('/:id', verificarToken, uploadAvisoImage.single('imagen'), async (req: Request, res: Response): Promise<void> => {
+router.put('/:id', verificarToken, setActualizadoPor, uploadAvisoImage.single('imagen'), async (req: Request, res: Response): Promise<void> => {
     try {
+        const { id } = req.params;
         const { titulo, contenido, publicado } = req.body;
-        const aviso = await Aviso.findById(req.params.id);
-        if (!aviso) {
+
+        const avisoAntes = await Aviso.findById(id);
+        if (!avisoAntes) {
             res.status(404).json({ mensaje: 'Aviso no encontrado' });
             return;
         }
 
-        if (req.file && aviso.imagenPublicId) {
-            await cloudinary.uploader.destroy(aviso.imagenPublicId);
+        // Si hay nueva imagen, borra la anterior de Cloudinary
+        if (req.file && avisoAntes.imagenPublicId) {
+            await cloudinary.uploader.destroy(avisoAntes.imagenPublicId);
         }
 
-        aviso.titulo = titulo || aviso.titulo;
-        aviso.contenido = contenido || aviso.contenido;
-        aviso.publicado = publicado === 'true';
+        // Modifica campos
+        avisoAntes.titulo = titulo || avisoAntes.titulo;
+        avisoAntes.contenido = contenido || avisoAntes.contenido;
+        avisoAntes.publicado = publicado === 'true';
+
         if (req.file) {
-            aviso.imagenUrl = req.file.path;
-            aviso.imagenPublicId = req.file.filename;
+            avisoAntes.imagenUrl = req.file.path;
+            avisoAntes.imagenPublicId = req.file.filename;
         }
 
-        await aviso.save();
-        res.json(aviso);
+        await avisoAntes.save();
+
+        if (!avisoAntes._id) return;
+
+        // 📌 Registrar en logs
+        await registrarLog({
+            req,
+            coleccion: 'Avisos',
+            accion: 'actualizar',
+            referenciaId: avisoAntes._id.toString(),
+            cambios: {
+                despues: avisoAntes // si quieres también puedes guardar "antes" clonando el original
+            }
+        });
+
+        res.json(avisoAntes);
     } catch (error) {
+        console.error('Error al actualizar aviso:', error);
         res.status(500).json({ mensaje: 'Error al actualizar aviso' });
     }
 });
@@ -119,6 +156,20 @@ router.delete('/:id', verificarToken, async (req: Request, res: Response): Promi
         }
 
         await Aviso.findByIdAndDelete(req.params.id);
+
+        if (!aviso._id) return;
+
+        // Registrar en log
+        if (aviso) {
+            await registrarLog({
+                req,
+                coleccion: 'Avisos',
+                accion: 'eliminar',
+                referenciaId: aviso._id.toString(),
+                cambios: { eliminado: aviso }
+            });
+        }
+
         res.json({ mensaje: 'Aviso eliminado correctamente' });
     } catch (error) {
         res.status(500).json({ mensaje: 'Error al eliminar aviso' });

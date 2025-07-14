@@ -4,6 +4,9 @@ import { uploadMiembroImage } from '../middlewares/cloudinaryStorage';
 
 import verificarToken from '../middlewares/auth';
 import Miembro from '../models/Miembro';
+import { setActualizadoPor, setCreadoPor } from '../utils/setCreadoPor';
+import { applyPopulateAutores, applyPopulateAutorSingle } from '../utils/populateHelpers';
+import { registrarLog } from '../utils/registrarLog';
 
 const router = express.Router();
 
@@ -31,12 +34,12 @@ router.get('/buscar', verificarToken, async (req: Request, res: Response): Promi
 
     try {
         const regex = new RegExp(query, 'i');
-        const miembros = await Miembro.find({
+        const miembros = await applyPopulateAutores(Miembro.find({
             $or: [
                 { nombre: regex },
                 { instrumento: regex }
             ]
-        }).select('nombre instrumento tieneVoz fotoPerfilUrl');
+        }).select('nombre instrumento tieneVoz fotoPerfilUrl'));
 
         res.json(miembros);
     } catch (error) {
@@ -52,11 +55,11 @@ router.get('/', verificarToken, async (req: Request, res: Response): Promise<voi
         const skip = (pagina - 1) * limite;
 
         const [miembros, total] = await Promise.all([
-            Miembro.find()
+            applyPopulateAutores(Miembro.find()
                 .sort({ nombre: 1 })
                 .skip(skip)
                 .limit(limite)
-                .select('nombre instrumento tieneVoz fotoPerfilUrl'),
+                .select('nombre instrumento tieneVoz fotoPerfilUrl')),
             Miembro.countDocuments()
         ]);
 
@@ -74,8 +77,8 @@ router.get('/', verificarToken, async (req: Request, res: Response): Promise<voi
 // Obtener un miembro por ID
 router.get('/:id', verificarToken, async (req: Request, res: Response): Promise<void> => {
     try {
-        const miembro = await Miembro.findById(req.params.id)
-            .select('nombre instrumento tieneVoz fotoPerfilUrl');
+        const miembro = await applyPopulateAutorSingle(Miembro.findById(req.params.id)
+            .select('nombre instrumento tieneVoz fotoPerfilUrl'));
 
         if (!miembro) {
             res.status(404).json({ mensaje: 'Miembro no encontrado' });
@@ -89,7 +92,7 @@ router.get('/:id', verificarToken, async (req: Request, res: Response): Promise<
 });
 
 // Crear nuevo miembro
-router.post('/', verificarToken, uploadMiembroImage.single('fotoPerfil'), async (req: Request, res: Response): Promise<void> => {
+router.post('/', verificarToken, setCreadoPor, uploadMiembroImage.single('fotoPerfil'), async (req: Request, res: Response): Promise<void> => {
     try {
         const { nombre, instrumento, tieneVoz } = req.body;
 
@@ -108,6 +111,16 @@ router.post('/', verificarToken, uploadMiembroImage.single('fotoPerfil'), async 
 
         await nuevoMiembro.save();
 
+        if (!nuevoMiembro._id) return;
+
+        await registrarLog({
+            req,
+            coleccion: 'Miembros',
+            accion: 'crear',
+            referenciaId: nuevoMiembro._id.toString(),
+            cambios: { nuevo: nuevoMiembro }
+        });
+
         res.status(200).json({
             mensaje: 'Miembro creado exitosamente',
             miembro: nuevoMiembro
@@ -118,7 +131,7 @@ router.post('/', verificarToken, uploadMiembroImage.single('fotoPerfil'), async 
 });
 
 // Actualizar miembro
-router.put('/:id', verificarToken, uploadMiembroImage.single('fotoPerfil'), async (req: Request, res: Response): Promise<void> => {
+router.put('/:id', verificarToken, setActualizadoPor, uploadMiembroImage.single('fotoPerfil'), async (req: Request, res: Response): Promise<void> => {
     try {
         const { nombre, instrumento, tieneVoz } = req.body;
         const miembro = await Miembro.findById(req.params.id);
@@ -150,6 +163,18 @@ router.put('/:id', verificarToken, uploadMiembroImage.single('fotoPerfil'), asyn
             { new: true }
         );
 
+        if (!actualizado?._id) return;
+
+        await registrarLog({
+            req,
+            coleccion: 'Miembros',
+            accion: 'actualizar',
+            referenciaId: actualizado._id.toString(),
+            cambios: {
+                despues: actualizado
+            }
+        });
+
         res.json(actualizado);
     } catch (error: any) {
         res.status(400).json({ mensaje: error.message });
@@ -171,6 +196,17 @@ router.delete('/:id', verificarToken, async (req: Request, res: Response): Promi
         }
 
         await Miembro.findByIdAndDelete(req.params.id);
+
+        if (!miembro._id) return;
+
+        await registrarLog({
+            req,
+            coleccion: 'Miembros',
+            accion: 'eliminar',
+            referenciaId: miembro._id.toString(),
+            cambios: { eliminado: miembro }
+        });
+
         res.json({ mensaje: 'Miembro eliminado correctamente' });
     } catch (error: any) {
         res.status(500).json({ mensaje: error.message });

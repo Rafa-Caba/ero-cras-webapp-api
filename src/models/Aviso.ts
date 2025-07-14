@@ -1,11 +1,13 @@
-import { Schema, model, Document } from 'mongoose';
+import { Schema, model, Document, Types } from 'mongoose';
 
 export interface IAviso extends Document {
     titulo: string;
-    contenido: string;
+    contenido: { type: Schema.Types.Mixed, required: true },
     imagenUrl?: string;
     imagenPublicId?: string;
     publicado: boolean;
+    creadoPor?: Types.ObjectId;
+    actualizadoPor?: Types.ObjectId;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -13,10 +15,23 @@ export interface IAviso extends Document {
 const AvisoSchema = new Schema<IAviso>(
     {
         titulo: { type: String, required: true },
-        contenido: { type: String, required: true },
+        contenido: {
+            type: Schema.Types.Mixed,
+            required: true
+        },
         imagenUrl: { type: String, default: '' },
         imagenPublicId: { type: String, default: null },
-        publicado: { type: Boolean, default: false }
+        publicado: { type: Boolean, default: false },
+        creadoPor: {
+            type: Schema.Types.ObjectId,
+            ref: 'Usuario',
+            required: false,
+        },
+        actualizadoPor: {
+            type: Schema.Types.ObjectId,
+            ref: 'Usuario',
+            required: false
+        }
     },
     { timestamps: true }
 );

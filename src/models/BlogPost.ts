@@ -1,4 +1,4 @@
-import { Schema, model, Document } from 'mongoose';
+import { Schema, model, Document, Types } from 'mongoose';
 
 export interface Comentario {
     autor: string;
@@ -8,7 +8,7 @@ export interface Comentario {
 
 export interface IBlogPost extends Document {
     titulo: string;
-    contenido: string;
+    contenido: { type: Schema.Types.Mixed, required: true },
     imagenUrl?: string;
     imagenPublicId?: string;
     autor: string;
@@ -17,6 +17,8 @@ export interface IBlogPost extends Document {
     likesUsuarios: string[];
     comentarios: Comentario[];
     publicado: boolean;
+    creadoPor?: Types.ObjectId;
+    actualizadoPor?: Types.ObjectId;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -24,7 +26,10 @@ export interface IBlogPost extends Document {
 const BlogPostSchema = new Schema<IBlogPost>(
     {
         titulo: { type: String, required: true },
-        contenido: { type: String, required: true },
+        contenido: {
+            type: Schema.Types.Mixed,
+            required: true
+        },
         imagenUrl: { type: String },
         imagenPublicId: { type: String },
         autor: { type: String, required: true },
@@ -38,7 +43,17 @@ const BlogPostSchema = new Schema<IBlogPost>(
                 fecha: { type: Date, default: Date.now }
             }
         ],
-        publicado: { type: Boolean, default: false }
+        publicado: { type: Boolean, default: false },
+        creadoPor: {
+            type: Schema.Types.ObjectId,
+            ref: 'Usuario',
+            required: false, // o true si siempre debe haber autor
+        },
+        actualizadoPor: {
+            type: Schema.Types.ObjectId,
+            ref: 'Usuario',
+            required: false
+        }
     },
     { timestamps: true }
 );

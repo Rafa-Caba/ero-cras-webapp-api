@@ -1,4 +1,4 @@
-import { Schema, model, Document } from 'mongoose';
+import { Schema, model, Document, Types } from 'mongoose';
 
 export interface IImagen extends Document {
     titulo: string;
@@ -11,6 +11,8 @@ export interface IImagen extends Document {
     imagenNosotros?: boolean;
     imagenLogo?: boolean;
     imagenGaleria?: boolean;
+    creadoPor?: Types.ObjectId;
+    actualizadoPor?: Types.ObjectId;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -29,6 +31,17 @@ const ImagenSchema = new Schema<IImagen>(
         imagenLogo: { type: Boolean, default: false },
 
         imagenGaleria: { type: Boolean, default: false },
+
+        creadoPor: {
+            type: Schema.Types.ObjectId,
+            ref: 'Usuario',
+            required: false, // o true si siempre debe haber autor
+        },
+        actualizadoPor: {
+            type: Schema.Types.ObjectId,
+            ref: 'Usuario',
+            required: false
+        }
     },
     { timestamps: true }
 );

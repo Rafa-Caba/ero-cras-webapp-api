@@ -78,7 +78,6 @@ router.get('/:id', verificarToken, async (req: Request, res: Response): Promise<
     }
 });
 
-
 // Crear usuario con imagen (Cloudinary)
 router.post('/', uploadUserImage.single('fotoPerfil'), async (req: Request, res: Response): Promise<void> => {
     try {
@@ -163,7 +162,11 @@ router.put('/:id', verificarToken, uploadUserImage.single('fotoPerfil'), async (
             { new: true }
         );
 
-        res.json(actualizado);
+        res.json({
+            mensaje: 'Usuario actualizado exitosamente',
+            usuarioActualizado: actualizado // o como lo llames
+        });
+
     } catch (error: any) {
         res.status(400).json({ mensaje: error.message });
     }

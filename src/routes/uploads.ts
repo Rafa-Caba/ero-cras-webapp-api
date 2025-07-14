@@ -3,6 +3,9 @@ import verificarToken from '../middlewares/auth';
 import cloudinary from '../utils/cloudinary';
 import { uploadGalleryImage } from '../middlewares/cloudinaryStorage';
 import Imagen from '../models/Imagen';
+import { setActualizadoPor, setCreadoPor } from '../utils/setCreadoPor';
+import { applyPopulateAutores, applyPopulateAutorSingle } from '../utils/populateHelpers';
+import { registrarLog } from '../utils/registrarLog';
 
 const router = express.Router();
 
@@ -17,7 +20,7 @@ router.get('/public', async (req: Request, res: Response) => {
 });
 
 // Crear imagen (Cloudinary)
-router.post('/', verificarToken, uploadGalleryImage.single('imagen'), async (req: Request, res: Response) => {
+router.post('/', verificarToken, setCreadoPor, uploadGalleryImage.single('imagen'), async (req: Request, res: Response) => {
     try {
         if (!req.file) {
             res.status(400).json({ mensaje: 'No se recibió imagen' });
@@ -36,12 +39,22 @@ router.post('/', verificarToken, uploadGalleryImage.single('imagen'), async (req
         });
 
         await nuevaImagen.save();
+
+        if (!nuevaImagen._id) return;
+
+        await registrarLog({
+            req,
+            coleccion: 'Imagenes',
+            accion: 'crear',
+            referenciaId: nuevaImagen._id.toString(),
+            cambios: { nuevo: nuevaImagen }
+        });
+
         res.status(200).json({ mensaje: 'Imagen subida con Cloudinary', imagen: nuevaImagen });
     } catch (err: any) {
         res.status(400).json({ mensaje: err.message });
     }
 });
-
 
 // Obtener imágenes con paginación
 router.get('/', verificarToken, async (req: Request, res: Response) => {
@@ -50,10 +63,10 @@ router.get('/', verificarToken, async (req: Request, res: Response) => {
 
     try {
         const total = await Imagen.countDocuments();
-        const imagenes = await Imagen.find()
+        const imagenes = await applyPopulateAutores(Imagen.find()
             .sort({ createdAt: -1 })
             .skip((page - 1) * limit)
-            .limit(limit);
+            .limit(limit));
 
         res.json({
             imagenes,
@@ -68,7 +81,7 @@ router.get('/', verificarToken, async (req: Request, res: Response) => {
 // Obtener una
 router.get('/:id', verificarToken, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-        const imagen = await Imagen.findById(req.params.id);
+        const imagen = await applyPopulateAutorSingle(Imagen.findById(req.params.id));
         if (!imagen) {
             res.status(404).json({ mensaje: 'No encontrada' });
             return;
@@ -80,7 +93,7 @@ router.get('/:id', verificarToken, async (req: Request, res: Response, next: Nex
 });
 
 // Actualizar imagen
-router.put('/:id', verificarToken, uploadGalleryImage.single('imagen'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.put('/:id', verificarToken, setActualizadoPor, uploadGalleryImage.single('imagen'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { titulo, descripcion, imagenLeftMenu, imagenRightMenu, imagenNosotros, imagenLogo } = req.body;
     const imagenId = req.params.id;
 
@@ -110,6 +123,19 @@ router.put('/:id', verificarToken, uploadGalleryImage.single('imagen'), async (r
         imagen.imagenLogo = imagenLogo ?? imagen.imagenLogo;
 
         await imagen.save();
+
+        if (!imagen._id) return;
+
+        await registrarLog({
+            req,
+            coleccion: 'Imagenes',
+            accion: 'actualizar',
+            referenciaId: imagen._id.toString(),
+            cambios: {
+                despues: imagen
+            }
+        });
+
         res.json({ mensaje: 'Imagen actualizada correctamente', imagen });
     } catch (error) {
         console.error(error);
@@ -132,6 +158,18 @@ router.delete('/:id', verificarToken, async (req: Request, res: Response, next: 
         }
 
         await Imagen.findByIdAndDelete(req.params.id);
+
+        // Registrar en log
+        if (!imagen._id) return;
+
+        await registrarLog({
+            req,
+            coleccion: 'Imagenes',
+            accion: 'eliminar',
+            referenciaId: imagen._id.toString(),
+            cambios: { eliminado: imagen }
+        });
+
         res.json({ mensaje: 'Imagen eliminada correctamente' });
     } catch (err) {
         res.status(500).json({ mensaje: (err as Error).message });
@@ -139,7 +177,7 @@ router.delete('/:id', verificarToken, async (req: Request, res: Response, next: 
 });
 
 // Patch para campos individuales tipo destacar/logo/etc
-router.patch('/marcar/:campo/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.patch('/marcar/:campo/:id', setActualizadoPor, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const campo = req.params.campo;
     const id = req.params.id.trim();
 
@@ -168,13 +206,25 @@ router.patch('/marcar/:campo/:id', async (req: Request, res: Response, next: Nex
 
         const imagenActualizada = await Imagen.findByIdAndUpdate(id, { $set: update }, { new: true });
 
+        if (!imagenActualizada?._id) return;
+
+        await registrarLog({
+            req,
+            coleccion: 'Imagenes',
+            accion: 'actualizar',
+            referenciaId: imagenActualizada._id.toString(),
+            cambios: {
+                despues: imagenActualizada
+            }
+        });
+
         res.json({ mensaje: `Campo ${campo} actualizado`, imagen: imagenActualizada });
     } catch (err) {
         res.status(500).json({ mensaje: (err as Error).message });
     }
 });
 
-router.patch('/marcar/imagenGaleria/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.patch('/marcar/imagenGaleria/:id', setActualizadoPor, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     console.log('Valor recibido:', req.body.valor);
 
     const id = req.params.id.trim();
@@ -196,6 +246,18 @@ router.patch('/marcar/imagenGaleria/:id', async (req: Request, res: Response, ne
             res.status(404).json({ mensaje: 'Imagen no encontrada' });
             return;
         }
+
+        if (!imagenActualizada._id) return;
+
+        await registrarLog({
+            req,
+            coleccion: 'Imagenes',
+            accion: 'actualizar',
+            referenciaId: imagenActualizada._id.toString(),
+            cambios: {
+                despues: imagenActualizada
+            }
+        });
 
         res.json({
             mensaje: `Campo imagenGaleria actualizado a ${valor}`,

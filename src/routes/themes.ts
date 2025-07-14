@@ -1,6 +1,9 @@
 import express, { Request, Response } from 'express';
 import Theme from '../models/Theme';
 import verificarToken from '../middlewares/auth';
+import { setActualizadoPor, setCreadoPor } from '../utils/setCreadoPor';
+import { applyPopulateAutores, applyPopulateAutorSingle } from '../utils/populateHelpers';
+import { registrarLog } from '../utils/registrarLog';
 
 const router = express.Router();
 
@@ -30,7 +33,8 @@ router.get('/', verificarToken, async (req: Request, res: Response): Promise<voi
             const totalTemas = await Theme.countDocuments();
             const totalPaginas = Math.ceil(totalTemas / limit);
 
-            const temas = await Theme.find().skip(skip).limit(limit);
+            const query = Theme.find().skip(skip).limit(limit);
+            const temas = await applyPopulateAutores(query);
 
             res.json({
                 temas,
@@ -47,7 +51,8 @@ router.get('/', verificarToken, async (req: Request, res: Response): Promise<voi
 router.get('/:id', verificarToken, async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const color = await Theme.findById(id);
+        const color = await applyPopulateAutorSingle(Theme.findById(id));
+
         if (!color) {
             res.status(404).json({ msg: 'Clase de color no encontrada' });
             return;
@@ -59,7 +64,7 @@ router.get('/:id', verificarToken, async (req: Request, res: Response): Promise<
 });
 
 // Actualizar una clase de color por ID
-router.put('/:id', verificarToken, async (req: Request, res: Response): Promise<void> => {
+router.put('/:id', verificarToken, setActualizadoPor, async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
         const { nombre, colorClass, color } = req.body;
@@ -75,6 +80,18 @@ router.put('/:id', verificarToken, async (req: Request, res: Response): Promise<
             return;
         }
 
+        if (!actualizado._id) return;
+
+        await registrarLog({
+            req,
+            coleccion: 'Themes',
+            accion: 'actualizar',
+            referenciaId: actualizado._id.toString(),
+            cambios: {
+                despues: actualizado
+            }
+        });
+
         res.json(actualizado);
     } catch (err: any) {
         res.status(500).json({ msg: 'Error al actualizar clase de color', error: err.message });
@@ -82,7 +99,7 @@ router.put('/:id', verificarToken, async (req: Request, res: Response): Promise<
 });
 
 // Crear una nueva clase de color
-router.post('/new', verificarToken, async (req: Request, res: Response): Promise<void> => {
+router.post('/new', verificarToken, setCreadoPor, async (req: Request, res: Response): Promise<void> => {
     try {
         const { nombre, color, colorClass } = req.body;
         const existente = await Theme.findOne({ colorClass });
@@ -91,9 +108,20 @@ router.post('/new', verificarToken, async (req: Request, res: Response): Promise
             return;
         }
 
-        const nuevo = new Theme({ nombre, color, colorClass });
-        await nuevo.save();
-        res.status(201).json(nuevo);
+        const nuevoTheme = new Theme({ nombre, color, colorClass });
+        await nuevoTheme.save();
+
+        if (!nuevoTheme._id) return;
+
+        await registrarLog({
+            req,
+            coleccion: 'Themes',
+            accion: 'crear',
+            referenciaId: nuevoTheme._id.toString(),
+            cambios: { nuevo: nuevoTheme }
+        });
+
+        res.status(201).json(nuevoTheme);
     } catch (err: any) {
         res.status(500).json({ msg: 'Error al crear clase de color', error: err.message });
     }
@@ -103,7 +131,26 @@ router.post('/new', verificarToken, async (req: Request, res: Response): Promise
 router.delete('/:id', verificarToken, async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
+
+        const theme = await Theme.findById(id);
+
+        if (!theme) {
+            res.status(404).json({ mensaje: 'Tema no encontrado' });
+            return;
+        }
+
         await Theme.findByIdAndDelete(id);
+
+        if (!theme._id) return;
+
+        await registrarLog({
+            req,
+            coleccion: 'Themes',
+            accion: 'eliminar',
+            referenciaId: theme._id.toString(),
+            cambios: { eliminado: theme }
+        });
+
         res.json({ msg: 'Color eliminado' });
     } catch (err: any) {
         res.status(500).json({ msg: 'Error al eliminar clase de color', error: err.message });

@@ -3,6 +3,9 @@ import cloudinary from '../utils/cloudinary';
 import { uploadBlogImage } from '../middlewares/cloudinaryStorage';
 import verificarToken from '../middlewares/auth';
 import BlogPost, { Comentario } from '../models/BlogPost';
+import { setActualizadoPor, setCreadoPor } from '../utils/setCreadoPor';
+import { applyPopulateAutores, applyPopulateAutorSingle } from '../utils/populateHelpers';
+import { registrarLog } from '../utils/registrarLog';
 
 const router = express.Router();
 
@@ -48,9 +51,9 @@ router.get('/buscar', verificarToken, async (req: Request, res: Response): Promi
 
     try {
         const regex = new RegExp(query, 'i');
-        const posts = await BlogPost.find({
+        const posts = await applyPopulateAutores(BlogPost.find({
             $or: [{ titulo: regex }, { contenido: regex }]
-        }).select('titulo autor fecha likes comentarios imagenUrl publicado');
+        }).select('titulo autor fecha likes comentarios imagenUrl publicado'));
 
         res.json(posts);
     } catch (error) {
@@ -66,11 +69,11 @@ router.get('/', verificarToken, async (req: Request, res: Response): Promise<voi
         const skip = (pagina - 1) * limite;
 
         const [posts, total] = await Promise.all([
-            BlogPost.find()
+            applyPopulateAutores(BlogPost.find()
                 .sort({ fecha: -1 })
                 .skip(skip)
                 .limit(limite)
-                .select('titulo autor fecha likes comentarios imagenUrl publicado'),
+                .select('titulo autor fecha likes comentarios imagenUrl publicado')),
             BlogPost.countDocuments()
         ]);
 
@@ -88,7 +91,7 @@ router.get('/', verificarToken, async (req: Request, res: Response): Promise<voi
 // Obtener un post por ID
 router.get('/:id', verificarToken, async (req: Request, res: Response): Promise<void> => {
     try {
-        const post = await BlogPost.findById(req.params.id);
+        const post = await applyPopulateAutorSingle(BlogPost.findById(req.params.id));
         if (!post) {
             res.status(404).json({ mensaje: 'Post no encontrado' });
             return;
@@ -100,7 +103,7 @@ router.get('/:id', verificarToken, async (req: Request, res: Response): Promise<
 });
 
 // Crear nuevo post
-router.post('/', verificarToken, uploadBlogImage.single('imagen'), async (req: Request, res: Response): Promise<void> => {
+router.post('/', verificarToken, setCreadoPor, uploadBlogImage.single('imagen'), async (req: Request, res: Response): Promise<void> => {
     try {
         const { titulo, contenido, autor, publicado } = req.body;
 
@@ -114,6 +117,17 @@ router.post('/', verificarToken, uploadBlogImage.single('imagen'), async (req: R
         });
 
         await nuevoPost.save();
+
+        if (!nuevoPost._id) return;
+
+        await registrarLog({
+            req,
+            coleccion: 'BlogPosts',
+            accion: 'crear',
+            referenciaId: nuevoPost._id.toString(),
+            cambios: { nuevo: nuevoPost }
+        });
+
         res.status(201).json({ mensaje: 'Post creado exitosamente', post: nuevoPost });
     } catch (error: any) {
         res.status(400).json({ mensaje: error.message });
@@ -121,7 +135,7 @@ router.post('/', verificarToken, uploadBlogImage.single('imagen'), async (req: R
 });
 
 // Actualizar post
-router.put('/:id', verificarToken, uploadBlogImage.single('imagen'), async (req: Request, res: Response): Promise<void> => {
+router.put('/:id', verificarToken, setActualizadoPor, uploadBlogImage.single('imagen'), async (req: Request, res: Response): Promise<void> => {
     try {
         const { titulo, contenido, autor, publicado } = req.body;
 
@@ -148,6 +162,17 @@ router.put('/:id', verificarToken, uploadBlogImage.single('imagen'), async (req:
         }
 
         const actualizado = await BlogPost.findByIdAndUpdate(req.params.id, { $set: fieldsToUpdate }, { new: true });
+
+        if (!actualizado?._id) return;
+
+        await registrarLog({
+            req,
+            coleccion: 'BlogPosts',
+            accion: 'actualizar',
+            referenciaId: actualizado._id.toString(),
+            cambios: { eliminado: actualizado }
+        });
+
         res.json(actualizado);
     } catch (error: any) {
         res.status(400).json({ mensaje: error.message });
@@ -168,6 +193,17 @@ router.delete('/:id', verificarToken, async (req: Request, res: Response): Promi
         }
 
         await BlogPost.findByIdAndDelete(req.params.id);
+
+        if (!post._id) return;
+
+        await registrarLog({
+            req,
+            coleccion: 'BlogPosts',
+            accion: 'eliminar',
+            referenciaId: post._id.toString(),
+            cambios: { eliminado: post }
+        });
+
         res.json({ mensaje: 'Post eliminado correctamente' });
     } catch (error: any) {
         res.status(500).json({ mensaje: error.message });
@@ -232,7 +268,7 @@ router.post('/:id/comentarios', verificarToken, async (req: Request, res: Respon
             fecha: new Date()
         };
 
-        post.comentarios.push(nuevoComentario);
+        post.comentarios.unshift(nuevoComentario);
 
         await post.save();
 

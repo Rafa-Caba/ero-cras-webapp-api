@@ -14,7 +14,11 @@ import uploadsRoutes from './routes/uploads';
 import blogPostRoutes from './routes/blogPosts';
 import avisoRoutes from './routes/avisos';
 import settingRoutes from './routes/settings';
+import logsRoutes from './routes/logs';
+import tiposCantoRoutes from './routes/tiposCanto';
+import themesGroups from './routes/themeGroups';
 import { ensureSettingsExists } from './utils/initSettings';
+import { crearGrupoPredeterminado } from './utils/inicializarGrupoPorDefecto';
 
 export const app: Application = express();
 
@@ -50,6 +54,9 @@ app.use('/api/themes', themesRoutes);
 app.use('/api/blog-posts', blogPostRoutes);
 app.use('/api/avisos', avisoRoutes);
 app.use('/api/settings', settingRoutes);
+app.use('/api/logs', logsRoutes);
+app.use('/api/tipos-canto', tiposCantoRoutes);
+app.use('/api/themes-group', themesGroups);
 
 // 404 para rutas no encontradas
 app.use((req: Request, res: Response) => {
@@ -78,6 +85,10 @@ if (!MONGO_URI) {
 mongoose.connect(MONGO_URI)
     .then(async () => {
         await ensureSettingsExists();
+
+        // Insertar grupo si no existe
+        await crearGrupoPredeterminado();
+
         app.listen(PORT, () => {
             console.log(`Servidor listo en el puerto ${PORT}`);
         });

@@ -1,4 +1,4 @@
-import { Schema, model, Document } from 'mongoose';
+import { Schema, model, Document, Types } from 'mongoose';
 
 export interface IMiembro extends Document {
     nombre: string;
@@ -6,6 +6,8 @@ export interface IMiembro extends Document {
     tieneVoz: boolean;
     fotoPerfilUrl?: string;
     fotoPerfilPublicId?: string;
+    creadoPor?: Types.ObjectId;
+    actualizadoPor?: Types.ObjectId;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -34,6 +36,16 @@ const MiembroSchema = new Schema<IMiembro>(
         fotoPerfilPublicId: {
             type: String,
             default: null
+        },
+        creadoPor: {
+            type: Schema.Types.ObjectId,
+            ref: 'Usuario',
+            required: false, // o true si siempre debe haber autor
+        },
+        actualizadoPor: {
+            type: Schema.Types.ObjectId,
+            ref: 'Usuario',
+            required: false
         }
     },
     { timestamps: true }

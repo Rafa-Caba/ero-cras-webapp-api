@@ -48,6 +48,9 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
 
         await RefreshToken.create({ token: refreshToken, userId: usuario._id });
 
+        usuario.ultimoAcceso = new Date();
+        await usuario.save();
+
         res.json({
             mensaje: 'Login exitoso',
             token: accessToken,
@@ -57,7 +60,9 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
                 nombre: usuario.nombre,
                 username: usuario.username,
                 correo: usuario.correo,
-                fotoPerfilUrl: usuario.fotoPerfilUrl
+                fotoPerfilUrl: usuario.fotoPerfilUrl,
+                rol: usuario.rol,
+                ultimoAcceso: usuario.ultimoAcceso
             }
         });
     } catch (error: any) {

@@ -8,6 +8,7 @@ export interface IUsuario extends Document {
     fotoPerfilUrl?: string;
     fotoPerfilPublicId?: string;
     rol: 'admin' | 'editor' | 'viewer';
+    ultimoAcceso: Date;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -46,7 +47,11 @@ const UsuarioSchema = new Schema<IUsuario>(
             type: String,
             enum: ['admin', 'editor', 'viewer'],
             default: 'viewer'
-        }
+        },
+        ultimoAcceso: {
+            type: Date,
+            default: null,
+        },
     },
     { timestamps: true }
 );

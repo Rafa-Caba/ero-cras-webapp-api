@@ -1,4 +1,4 @@
-import { Schema, model, Document } from 'mongoose';
+import mongoose, { Schema, model, Document } from 'mongoose';
 
 export interface ISetting extends Document {
     tituloWeb: string;
@@ -18,6 +18,9 @@ export interface ISetting extends Document {
 
     historiaNosotros: string;
     telefonoContacto: string;
+
+    creadoPor?: mongoose.Types.ObjectId;
+    actualizadoPor?: mongoose.Types.ObjectId;
 
     createdAt?: Date;
     updatedAt?: Date;
@@ -41,7 +44,11 @@ const SettingSchema = new Schema<ISetting>(
         },
 
         historiaNosotros: { type: String, default: '' },
-        telefonoContacto: { type: String, default: '' }
+        telefonoContacto: { type: String, default: '' },
+
+        // 👇 Esto probablemente falta
+        creadoPor: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario' },
+        actualizadoPor: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario' },
     },
     { timestamps: true }
 );
