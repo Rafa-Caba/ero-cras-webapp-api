@@ -1,8 +1,9 @@
 import { Schema, model, Document, Types } from 'mongoose';
+import type { JSONContent } from '@tiptap/react';
 
 export interface ICanto extends Document {
     titulo: string;
-    texto: { type: Schema.Types.Mixed, required: true },
+    texto: JSONContent;
     tipo?: string;
     compositor?: string;
     fecha?: Date;

@@ -9,6 +9,7 @@ export interface IUsuario extends Document {
     fotoPerfilPublicId?: string;
     rol: 'admin' | 'editor' | 'viewer';
     ultimoAcceso: Date;
+    themePersonal?: string;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -52,6 +53,11 @@ const UsuarioSchema = new Schema<IUsuario>(
             type: Date,
             default: null,
         },
+        themePersonal: {
+            type: Schema.Types.ObjectId,
+            ref: 'ThemeGroup',
+            default: null
+        }
     },
     { timestamps: true }
 );

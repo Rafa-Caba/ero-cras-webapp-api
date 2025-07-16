@@ -1,8 +1,9 @@
 import { Schema, model, Document, Types } from 'mongoose';
+import type { JSONContent } from '@tiptap/react';
 
 export interface IAviso extends Document {
     titulo: string;
-    contenido: { type: Schema.Types.Mixed, required: true },
+    contenido: JSONContent;
     imagenUrl?: string;
     imagenPublicId?: string;
     publicado: boolean;

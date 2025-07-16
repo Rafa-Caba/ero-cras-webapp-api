@@ -60,7 +60,6 @@ router.get('/', verificarToken, async (req: Request, res: Response): Promise<voi
     }
 });
 
-
 // Obtener un usuario
 router.get('/:id', verificarToken, async (req: Request, res: Response): Promise<void> => {
     try {
@@ -169,6 +168,24 @@ router.put('/:id', verificarToken, uploadUserImage.single('fotoPerfil'), async (
 
     } catch (error: any) {
         res.status(400).json({ mensaje: error.message });
+    }
+});
+
+// Actualizar el tema por usuario
+router.put('/usuario/tema/:id', verificarToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { themePersonal } = req.body;
+
+        const usuario = await Usuario.findByIdAndUpdate(
+            id,
+            { themePersonal },
+            { new: true }
+        ).populate('themePersonal');
+
+        res.json(usuario);
+    } catch (error) {
+        res.status(500).json({ error: 'Error al actualizar tema del usuario' });
     }
 });
 

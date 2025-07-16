@@ -20,7 +20,7 @@ router.get('/public', async (req: Request, res: Response) => {
 });
 
 // Crear imagen (Cloudinary)
-router.post('/', verificarToken, setCreadoPor, uploadGalleryImage.single('imagen'), async (req: Request, res: Response) => {
+router.post('/', verificarToken, uploadGalleryImage.single('imagen'), setCreadoPor, async (req: Request, res: Response) => {
     try {
         if (!req.file) {
             res.status(400).json({ mensaje: 'No se recibió imagen' });
@@ -93,7 +93,7 @@ router.get('/:id', verificarToken, async (req: Request, res: Response, next: Nex
 });
 
 // Actualizar imagen
-router.put('/:id', verificarToken, setActualizadoPor, uploadGalleryImage.single('imagen'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.put('/:id', verificarToken, uploadGalleryImage.single('imagen'), setActualizadoPor, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { titulo, descripcion, imagenLeftMenu, imagenRightMenu, imagenNosotros, imagenLogo } = req.body;
     const imagenId = req.params.id;
 

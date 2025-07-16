@@ -5,8 +5,10 @@ const gruposIniciales = [
         nombre: 'Predeterminado',
         descripcion: 'Grupo de colores base por defecto',
         activo: true,
+        esTemaPublico: true,
         colores: [
             { nombre: 'Color Primario', colorClass: 'primary', color: '#ead4ff' },
+            { nombre: 'Color Secondario', colorClass: 'secondary', color: '#cfaef9' },
             { nombre: 'Color de Boton', colorClass: 'btn-general', color: '#a966ff' },
             { nombre: 'Color de los Menus Laterales', colorClass: 'side-menus', color: '#ead4ff' },
             { nombre: 'Color del Header', colorClass: 'header', color: '#cfaef9' },
@@ -22,8 +24,10 @@ const gruposIniciales = [
         nombre: 'Oscuro',
         descripcion: 'Modo oscuro con tonos púrpura y contraste alto',
         activo: false,
+        esTemaPublico: false,
         colores: [
             { nombre: 'Color Primario', colorClass: 'primary', color: '#1c0f2e' },
+            { nombre: 'Color Secondario', colorClass: 'secondary', color: '#7b4fa6' },
             { nombre: 'Color de Boton', colorClass: 'btn-general', color: '#8a36f8' },
             { nombre: 'Color de los Menus Laterales', colorClass: 'side-menus', color: '#2e1a4d' },
             { nombre: 'Color del Header', colorClass: 'header', color: '#3c2666' },
@@ -39,8 +43,10 @@ const gruposIniciales = [
         nombre: 'Claro',
         descripcion: 'Tema claro con fondo blanco y detalles lavanda',
         activo: false,
+        esTemaPublico: false,
         colores: [
             { nombre: 'Color Primario', colorClass: 'primary', color: '#ffffff' },
+            { nombre: 'Color Secondario', colorClass: 'secondary', color: '#dcc1fb' },
             { nombre: 'Color de Boton', colorClass: 'btn-general', color: '#d6b3ff' },
             { nombre: 'Color de los Menus Laterales', colorClass: 'side-menus', color: '#f8f2ff' },
             { nombre: 'Color del Header', colorClass: 'header', color: '#efe1ff' },

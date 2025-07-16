@@ -1,25 +1,23 @@
-import express from 'express';
-import Settings from '../models/Settings.';
+import express, { Request, Response } from 'express';
+import mongoose from 'mongoose';
+import Settings, { ISetting } from '../models/Settings';
 import verificarToken from '../middlewares/auth';
 import { setActualizadoPor } from '../utils/setCreadoPor';
 import { applyPopulateAutorSingle } from '../utils/populateHelpers';
-import { registrarLog } from '../utils/registrarLog';
+import { registrarLog, RequestConUsuario } from '../utils/registrarLog';
 
 const router = express.Router();
 
 // Obtener configuración públicamente
-router.get('/public', async (req, res) => {
+router.get('/public', async (_req: Request, res: Response) => {
     try {
-        // Buscar configuración
         let settingsDoc = await Settings.findOne();
 
-        // Si no existe, crear una nueva
         if (!settingsDoc) {
             settingsDoc = new Settings();
             await settingsDoc.save();
         }
 
-        // Devolver el documento garantizado
         res.json(settingsDoc);
     } catch (error) {
         console.error('Error al obtener configuración pública:', error);
@@ -27,23 +25,19 @@ router.get('/public', async (req, res) => {
     }
 });
 
-
-// Obtener configuración actual
-router.get('/', verificarToken, async (req, res) => {
+// Obtener configuración actual (privada)
+router.get('/', verificarToken, async (_req: RequestConUsuario, res: Response) => {
     try {
-        // Buscar configuración base
         let settingsDoc = await Settings.findOne();
 
-        // Si no existe, crear
         if (!settingsDoc) {
             settingsDoc = new Settings();
             await settingsDoc.save();
         }
 
-        // Hacer populate con el _id garantizado
-        const settings = await applyPopulateAutorSingle(Settings.findById(settingsDoc._id));
+        const populated = await applyPopulateAutorSingle(Settings.findById(settingsDoc._id));
 
-        res.json(settings);
+        res.json(populated);
     } catch (error) {
         console.error('Error al obtener configuración:', error);
         res.status(500).json({ msg: 'Error al obtener configuración', error });
@@ -51,24 +45,42 @@ router.get('/', verificarToken, async (req, res) => {
 });
 
 // Actualizar configuración
-router.put('/:id', setActualizadoPor, verificarToken, async (req, res) => {
+router.put('/:id', setActualizadoPor, verificarToken, async (req: RequestConUsuario, res: Response): Promise<void> => {
     try {
-        const updated = await Settings.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        // Validación básica de historia
+        if (!req.body.historiaNosotros || typeof req.body.historiaNosotros !== 'object') {
+            res.status(400).json({ msg: 'El contenido de historia es inválido.' });
+            return;
+        }
 
-        if (!updated?._id) return;
+        // Actualizar y hacer populate
+        const updatedDoc = await Settings.findByIdAndUpdate(
+            req.params.id,
+            req.body,
+            { new: true, runValidators: true }
+        );
 
+        if (!updatedDoc?._id) {
+            res.status(404).json({ msg: 'Configuración no encontrada tras la actualización.' });
+            return;
+        }
+
+        await updatedDoc.populate('creadoPor actualizadoPor', 'nombre username imagen');
+
+        // Registrar log
         await registrarLog({
             req,
             coleccion: 'Settings',
             accion: 'actualizar',
-            referenciaId: updated._id.toString(),
+            referenciaId: updatedDoc._id.toString(),
             cambios: {
-                despues: updated
+                despues: updatedDoc
             }
         });
 
-        res.json(updated);
+        res.json(updatedDoc);
     } catch (error) {
+        console.error('Error al actualizar configuración:', error);
         res.status(500).json({ msg: 'Error al actualizar configuración', error });
     }
 });

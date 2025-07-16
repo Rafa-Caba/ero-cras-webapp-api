@@ -13,6 +13,7 @@ export interface IThemeGroup extends Document {
     creadoPor?: string;
     actualizadoPor?: string;
     activo: boolean;
+    esTemaPublico: boolean;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -33,7 +34,8 @@ const ThemeGroupSchema = new Schema<IThemeGroup>(
         colores: { type: [ThemeSchema], required: true },
         creadoPor: { type: Schema.Types.ObjectId, ref: 'Usuario' },
         actualizadoPor: { type: Schema.Types.ObjectId, ref: 'Usuario' },
-        activo: { type: Boolean, default: false }
+        activo: { type: Boolean, default: false },
+        esTemaPublico: { type: Boolean, default: false }
     },
     { timestamps: true }
 );

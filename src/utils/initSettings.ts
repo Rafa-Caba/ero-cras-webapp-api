@@ -1,4 +1,4 @@
-import Settings from "../models/Settings.";
+import Settings from "../models/Settings";
 
 export const ensureSettingsExists = async () => {
     const count = await Settings.countDocuments();

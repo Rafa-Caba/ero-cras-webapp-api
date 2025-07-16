@@ -21,7 +21,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
                 { correo: usernameOrEmail },
                 { username: usernameOrEmail }
             ]
-        });
+        }).populate('themePersonal');
 
         if (!usuario) {
             res.status(401).json({ mensaje: 'Usuario no encontrado' });
@@ -62,7 +62,8 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
                 correo: usuario.correo,
                 fotoPerfilUrl: usuario.fotoPerfilUrl,
                 rol: usuario.rol,
-                ultimoAcceso: usuario.ultimoAcceso
+                ultimoAcceso: usuario.ultimoAcceso,
+                themePersonal: usuario.themePersonal
             }
         });
     } catch (error: any) {

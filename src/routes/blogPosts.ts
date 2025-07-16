@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import type { ParamsDictionary } from 'express-serve-static-core';
 import cloudinary from '../utils/cloudinary';
 import { uploadBlogImage } from '../middlewares/cloudinaryStorage';
 import verificarToken from '../middlewares/auth';
@@ -6,8 +7,18 @@ import BlogPost, { Comentario } from '../models/BlogPost';
 import { setActualizadoPor, setCreadoPor } from '../utils/setCreadoPor';
 import { applyPopulateAutores, applyPopulateAutorSingle } from '../utils/populateHelpers';
 import { registrarLog } from '../utils/registrarLog';
+import type { JSONContent } from '@tiptap/react';
 
 const router = express.Router();
+
+interface ComentarioParams extends ParamsDictionary {
+    id: string;
+}
+
+interface ComentarioBody {
+    autor: string;
+    texto: JSONContent;
+}
 
 // Obtener todos los posts públicos (publicado: true)
 router.get('/publicos', async (req: Request, res: Response): Promise<void> => {
@@ -52,8 +63,8 @@ router.get('/buscar', verificarToken, async (req: Request, res: Response): Promi
     try {
         const regex = new RegExp(query, 'i');
         const posts = await applyPopulateAutores(BlogPost.find({
-            $or: [{ titulo: regex }, { contenido: regex }]
-        }).select('titulo autor fecha likes comentarios imagenUrl publicado'));
+            $or: [{ titulo: regex }] // contenido eliminado por ser JSON
+        }).select('titulo autor createdAt likes comentarios imagenUrl publicado'));
 
         res.json(posts);
     } catch (error) {
@@ -70,10 +81,10 @@ router.get('/', verificarToken, async (req: Request, res: Response): Promise<voi
 
         const [posts, total] = await Promise.all([
             applyPopulateAutores(BlogPost.find()
-                .sort({ fecha: -1 })
+                .sort({ createdAt: -1 }) // corregido
                 .skip(skip)
                 .limit(limite)
-                .select('titulo autor fecha likes comentarios imagenUrl publicado')),
+                .select('titulo autor createdAt likes comentarios imagenUrl publicado')),
             BlogPost.countDocuments()
         ]);
 
@@ -103,9 +114,14 @@ router.get('/:id', verificarToken, async (req: Request, res: Response): Promise<
 });
 
 // Crear nuevo post
-router.post('/', verificarToken, setCreadoPor, uploadBlogImage.single('imagen'), async (req: Request, res: Response): Promise<void> => {
+router.post('/', verificarToken, uploadBlogImage.single('imagen'), setCreadoPor, async (req: Request, res: Response): Promise<void> => {
     try {
         const { titulo, contenido, autor, publicado } = req.body;
+
+        if (!contenido || Object.keys(contenido).length === 0) {
+            res.status(400).json({ mensaje: 'Contenido inválido' });
+            return;
+        }
 
         const nuevoPost = new BlogPost({
             titulo,
@@ -113,7 +129,8 @@ router.post('/', verificarToken, setCreadoPor, uploadBlogImage.single('imagen'),
             autor,
             publicado,
             imagenUrl: req.file?.path || '',
-            imagenPublicId: req.file?.filename || ''
+            imagenPublicId: req.file?.filename || '',
+            creadoPor: req.body.creadoPor
         });
 
         await nuevoPost.save();
@@ -135,9 +152,14 @@ router.post('/', verificarToken, setCreadoPor, uploadBlogImage.single('imagen'),
 });
 
 // Actualizar post
-router.put('/:id', verificarToken, setActualizadoPor, uploadBlogImage.single('imagen'), async (req: Request, res: Response): Promise<void> => {
+router.put('/:id', verificarToken, uploadBlogImage.single('imagen'), setActualizadoPor, async (req: Request, res: Response): Promise<void> => {
     try {
         const { titulo, contenido, autor, publicado } = req.body;
+
+        if (!contenido || Object.keys(contenido).length === 0) {
+            res.status(400).json({ mensaje: 'Contenido inválido' });
+            return;
+        }
 
         const post = await BlogPost.findById(req.params.id);
         if (!post) {
@@ -170,7 +192,7 @@ router.put('/:id', verificarToken, setActualizadoPor, uploadBlogImage.single('im
             coleccion: 'BlogPosts',
             accion: 'actualizar',
             referenciaId: actualizado._id.toString(),
-            cambios: { eliminado: actualizado }
+            cambios: { actualizado } // corregido aquí
         });
 
         res.json(actualizado);
@@ -219,7 +241,8 @@ router.post('/:id/toggle-like', verificarToken, async (req: Request, res: Respon
             return;
         }
 
-        const userId = req.body.userId; // ⚠️ O usa req.usuario.id si lo extraes del token
+        // const userId = req.usuario?.id; // Recomendado si lo tienes del token
+        const userId = req.body.userId;
 
         if (!userId) {
             res.status(400).json({ mensaje: 'Falta el ID del usuario' });
@@ -247,8 +270,8 @@ router.post('/:id/toggle-like', verificarToken, async (req: Request, res: Respon
     }
 });
 
-// Agregar comentario
-router.post('/:id/comentarios', verificarToken, async (req: Request, res: Response): Promise<void> => {
+// Agregar comentario a un post
+router.post('/:id/comentarios', verificarToken, async (req: Request<ComentarioParams, {}, ComentarioBody>, res: Response): Promise<void> => {
     try {
         const post = await BlogPost.findById(req.params.id);
         if (!post) {
@@ -262,14 +285,13 @@ router.post('/:id/comentarios', verificarToken, async (req: Request, res: Respon
             return;
         }
 
-        const nuevoComentario: Comentario = {
+        const nuevoComentario = {
             autor,
             texto,
-            fecha: new Date()
+            fecha: new Date(),
         };
 
         post.comentarios.unshift(nuevoComentario);
-
         await post.save();
 
         res.json({ mensaje: 'Comentario agregado', comentarios: post.comentarios });

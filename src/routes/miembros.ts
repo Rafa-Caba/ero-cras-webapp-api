@@ -92,7 +92,7 @@ router.get('/:id', verificarToken, async (req: Request, res: Response): Promise<
 });
 
 // Crear nuevo miembro
-router.post('/', verificarToken, setCreadoPor, uploadMiembroImage.single('fotoPerfil'), async (req: Request, res: Response): Promise<void> => {
+router.post('/', verificarToken, uploadMiembroImage.single('fotoPerfil'), setCreadoPor, async (req: Request, res: Response): Promise<void> => {
     try {
         const { nombre, instrumento, tieneVoz } = req.body;
 
@@ -131,7 +131,7 @@ router.post('/', verificarToken, setCreadoPor, uploadMiembroImage.single('fotoPe
 });
 
 // Actualizar miembro
-router.put('/:id', verificarToken, setActualizadoPor, uploadMiembroImage.single('fotoPerfil'), async (req: Request, res: Response): Promise<void> => {
+router.put('/:id', verificarToken, uploadMiembroImage.single('fotoPerfil'), setActualizadoPor, async (req: Request, res: Response): Promise<void> => {
     try {
         const { nombre, instrumento, tieneVoz } = req.body;
         const miembro = await Miembro.findById(req.params.id);

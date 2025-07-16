@@ -20,7 +20,23 @@ router.get('/public', async (_req: Request, res: Response) => {
 // Crear canto
 router.post('/', verificarToken, setCreadoPor, async (req: Request, res: Response): Promise<void> => {
     try {
-        const nuevoCanto = new Canto(req.body);
+        const { titulo, texto, tipo, compositor, fecha, url } = req.body;
+
+        if (!titulo || !texto || Object.keys(texto).length === 0) {
+            res.status(400).json({ mensaje: 'Título y texto son requeridos' });
+            return;
+        }
+
+        const nuevoCanto = new Canto({
+            titulo,
+            texto,
+            tipo,
+            compositor,
+            fecha,
+            url,
+            creadoPor: req.body.creadoPor
+        });
+
         await nuevoCanto.save();
 
         if (!nuevoCanto._id) return;
@@ -39,7 +55,7 @@ router.post('/', verificarToken, setCreadoPor, async (req: Request, res: Respons
     }
 });
 
-// Leer todos los cantos
+// Leer todos los cantos (privado con auth)
 router.get('/', verificarToken, async (_req: Request, res: Response) => {
     try {
         const cantos = await applyPopulateAutores(Canto.find());
@@ -50,7 +66,7 @@ router.get('/', verificarToken, async (_req: Request, res: Response) => {
 });
 
 // Obtener un canto por ID
-router.get('/:id', verificarToken, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+router.get('/:id', verificarToken, async (req: Request, res: Response, _next: NextFunction): Promise<void> => {
     try {
         const canto = await applyPopulateAutorSingle(Canto.findById(req.params.id));
         if (!canto) {
@@ -66,7 +82,26 @@ router.get('/:id', verificarToken, async (req: Request, res: Response, next: Nex
 // Actualizar canto
 router.put('/:id', verificarToken, setActualizadoPor, async (req: Request, res: Response): Promise<void> => {
     try {
-        const actualizado = await Canto.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        const { titulo, texto, tipo, compositor, fecha, url } = req.body;
+
+        if (!texto || Object.keys(texto).length === 0) {
+            res.status(400).json({ mensaje: 'Texto inválido' });
+            return;
+        }
+
+        const actualizado = await Canto.findByIdAndUpdate(
+            req.params.id,
+            {
+                ...(titulo && { titulo }),
+                ...(texto && { texto }),
+                ...(tipo && { tipo }),
+                ...(compositor && { compositor }),
+                ...(fecha && { fecha }),
+                ...(url && { url }),
+                actualizadoPor: req.body.actualizadoPor
+            },
+            { new: true }
+        );
 
         if (!actualizado?._id) return;
 
@@ -75,9 +110,7 @@ router.put('/:id', verificarToken, setActualizadoPor, async (req: Request, res: 
             coleccion: 'Cantos',
             accion: 'actualizar',
             referenciaId: actualizado._id.toString(),
-            cambios: {
-                despues: actualizado
-            }
+            cambios: { actualizado }
         });
 
         res.json(actualizado);

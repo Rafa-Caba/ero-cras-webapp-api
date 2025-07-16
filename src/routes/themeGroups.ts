@@ -25,6 +25,15 @@ router.get('/public/activo', async (req, res) => {
     }
 });
 
+router.get('/public/tema-actual', async (req, res) => {
+    try {
+        const temaPublico = await ThemeGroup.findOne({ esTemaPublico: true });
+        res.json(temaPublico);
+    } catch (error) {
+        res.status(500).json({ msg: 'Error al obtener tema público actual', error });
+    }
+});
+
 router.get('/activo', verificarToken, async (req, res) => {
     try {
         const grupoActivo = await ThemeGroup.findOne({ activo: true });
@@ -167,6 +176,39 @@ router.put('/activar/:id', verificarToken, async (req: Request, res: Response): 
     }
 });
 
+// Marcar como público o privado
+router.put('/publicar/:id', verificarToken, async (req: Request, res: Response): Promise<void> => {
+    try {
+        // Desactivar todos los temas públicos actuales
+        await ThemeGroup.updateMany({}, { esTemaPublico: false });
+
+        // Activar solo el que viene por ID
+        const grupo = await ThemeGroup.findByIdAndUpdate(
+            req.params.id,
+            { esTemaPublico: true },
+            { new: true }
+        );
+
+        if (!grupo) {
+            res.status(404).json({ msg: 'Grupo no encontrado para marcar como público' });
+            return;
+        }
+
+        if (!grupo._id) return;
+
+        await registrarLog({
+            req,
+            coleccion: 'ThemeGroups',
+            accion: 'actualizar',
+            referenciaId: grupo._id.toString(),
+            cambios: { nuevoValor: grupo.nombre }
+        });
+
+        res.json(grupo);
+    } catch (error: any) {
+        res.status(500).json({ msg: 'Error al marcar tema como público', error: error.message });
+    }
+});
 // Eliminar grupo
 router.delete('/:id', verificarToken, async (req: Request, res: Response): Promise<void> => {
     try {

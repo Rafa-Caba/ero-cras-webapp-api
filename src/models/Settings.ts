@@ -1,4 +1,5 @@
 import mongoose, { Schema, model, Document } from 'mongoose';
+import type { JSONContent } from '@tiptap/react';
 
 export interface ISetting extends Document {
     tituloWeb: string;
@@ -16,7 +17,7 @@ export interface ISetting extends Document {
         secundaria: string;
     };
 
-    historiaNosotros: string;
+    historiaNosotros: JSONContent;
     telefonoContacto: string;
 
     creadoPor?: mongoose.Types.ObjectId;
@@ -43,7 +44,7 @@ const SettingSchema = new Schema<ISetting>(
             secundaria: { type: String, default: '' }
         },
 
-        historiaNosotros: { type: String, default: '' },
+        historiaNosotros: { type: Schema.Types.Mixed, required: true },
         telefonoContacto: { type: String, default: '' },
 
         // 👇 Esto probablemente falta
