@@ -5,6 +5,9 @@ import express, { Application, NextFunction, Request, Response } from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 
+import http from 'http';
+import { iniciarSockets } from './socketServer';
+
 import loginRoutes from './routes/login';
 import themesRoutes from './routes/themes';
 import cantosRoutes from './routes/cantos';
@@ -17,6 +20,7 @@ import settingRoutes from './routes/settings';
 import logsRoutes from './routes/logs';
 import tiposCantoRoutes from './routes/tiposCanto';
 import themesGroups from './routes/themeGroups';
+import chatRoutes from './routes/chat';
 import { ensureSettingsExists } from './utils/initSettings';
 import { crearGrupoPredeterminado } from './utils/inicializarGrupoPorDefecto';
 
@@ -57,6 +61,7 @@ app.use('/api/settings', settingRoutes);
 app.use('/api/logs', logsRoutes);
 app.use('/api/tipos-canto', tiposCantoRoutes);
 app.use('/api/themes-group', themesGroups);
+app.use('/api/chat', chatRoutes);
 
 // 404 para rutas no encontradas
 app.use((req: Request, res: Response) => {
@@ -85,12 +90,14 @@ if (!MONGO_URI) {
 mongoose.connect(MONGO_URI)
     .then(async () => {
         await ensureSettingsExists();
-
-        // Insertar grupo si no existe
         await crearGrupoPredeterminado();
 
-        app.listen(PORT, () => {
-            console.log(`Servidor listo en el puerto ${PORT}`);
+        const servidorHttp = http.createServer(app);
+
+        iniciarSockets(servidorHttp);
+
+        servidorHttp.listen(PORT, () => {
+            console.log(`🚀 Servidor HTTP+WebSocket en puerto ${PORT}`);
         });
     })
     .catch(err => {

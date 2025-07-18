@@ -87,3 +87,20 @@ export const uploadAvisoImage = multer({
         } as any
     })
 });
+
+// 🆕 Upload para chats
+export const uploadChatImage = multer({
+    storage: new CloudinaryStorage({
+        cloudinary,
+        params: {
+            folder: 'ero-cras-imagenes/chats',
+            allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+            public_id: (req: Request, file: Express.Multer.File): string => {
+                const nombre = file.originalname.split('.')[0];
+                const timestamp = Date.now();
+                return `chat_${nombre}_${timestamp}`;
+            },
+            transformation: [{ width: 1000, height: 1000, crop: 'limit' }]
+        } as any
+    })
+});

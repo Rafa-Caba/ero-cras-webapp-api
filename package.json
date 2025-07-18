@@ -20,7 +20,8 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.16.1",
     "multer": "^2.0.1",
-    "multer-storage-cloudinary": "^4.0.0"
+    "multer-storage-cloudinary": "^4.0.0",
+    "socket.io": "^4.8.1"
   },
   "devDependencies": {
     "@tiptap/react": "^3.0.5",
@@ -31,6 +32,7 @@
     "@types/mongoose": "^5.11.96",
     "@types/multer": "^2.0.0",
     "@types/node": "^24.0.10",
+    "@types/socket.io": "^3.0.1",
     "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
