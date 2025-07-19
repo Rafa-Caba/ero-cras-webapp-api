@@ -19,7 +19,7 @@ export const registrarLog = async ({
 }: {
     req: RequestConUsuario;
     coleccion: string;
-    accion: 'crear' | 'actualizar' | 'eliminar';
+    accion: 'crear' | 'actualizar' | 'eliminar' | 'agregar_reaccion' | 'quitar_reaccion';
     referenciaId: string;
     cambios?: Record<string, any>;
 }) => {

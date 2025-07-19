@@ -1,7 +1,7 @@
 import { Schema, model, Document, Types } from 'mongoose';
 
 export interface ILog extends Document {
-    accion: 'crear' | 'actualizar' | 'eliminar';
+    accion: 'crear' | 'actualizar' | 'eliminar' | 'agregar_reaccion' | 'quitar_reaccion';
     coleccion: string; // por ejemplo: 'Aviso', 'Canto', etc.
     referenciaId: Types.ObjectId; // ID del documento afectado
     usuario: Types.ObjectId; // quién realizó la acción
@@ -13,7 +13,7 @@ const LogSchema = new Schema<ILog>(
     {
         accion: {
             type: String,
-            enum: ['crear', 'actualizar', 'eliminar'],
+            enum: ['crear', 'actualizar', 'eliminar', 'agregar_reaccion', 'quitar_reaccion'],
             required: true
         },
         coleccion: {
