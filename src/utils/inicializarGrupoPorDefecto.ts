@@ -18,6 +18,9 @@ const gruposIniciales = [
             { nombre: 'Color de la Navegacion - Hover', colorClass: 'nav-link-hover', color: '#b68fe6' },
             { nombre: 'Color de los Formularios', colorClass: 'form-color', color: '#c5b9cc' },
             { nombre: 'Color del texto', colorClass: 'text-color', color: '#000000' },
+            { nombre: 'Contendor del chat receptor', colorClass: 'chat-receiver-container', color: '#7d2181' },
+            { nombre: 'Contendor del chat remitente', colorClass: 'chat-sender-container', color: '#632168' },
+            { nombre: 'Color del Texto de chats', colorClass: 'chat-text-color', color: '#ffffff' },
         ]
     },
     {
@@ -37,6 +40,9 @@ const gruposIniciales = [
             { nombre: 'Color de la Navegacion - Hover', colorClass: 'nav-link-hover', color: '#a966ff' },
             { nombre: 'Color de los Formularios', colorClass: 'form-color', color: '#888888' },
             { nombre: 'Color del texto', colorClass: 'text-color', color: '#ffffff' },
+            { nombre: 'Contendor del chat receptor', colorClass: 'chat-receiver-container', color: '#884B9F' },
+            { nombre: 'Contendor del chat remitente', colorClass: 'chat-sender-container', color: '#A861B1' },
+            { nombre: 'Color del Texto de chats', colorClass: 'chat-text-color', color: '#ffffff' },
         ]
     },
     {
@@ -47,7 +53,7 @@ const gruposIniciales = [
         colores: [
             { nombre: 'Color Primario', colorClass: 'primary', color: '#ffffff' },
             { nombre: 'Color Secondario', colorClass: 'secondary', color: '#dcc1fb' },
-            { nombre: 'Color de Boton', colorClass: 'btn-general', color: '#d6b3ff' },
+            { nombre: 'Color de Boton', colorClass: 'btn-general', color: '#C392DB' },
             { nombre: 'Color de los Menus Laterales', colorClass: 'side-menus', color: '#f8f2ff' },
             { nombre: 'Color del Header', colorClass: 'header', color: '#efe1ff' },
             { nombre: 'Color del Footer', colorClass: 'footer', color: '#e4d4f9' },
@@ -56,6 +62,9 @@ const gruposIniciales = [
             { nombre: 'Color de la Navegacion - Hover', colorClass: 'nav-link-hover', color: '#dabcf9' },
             { nombre: 'Color de los Formularios', colorClass: 'form-color', color: '#f3ecf9' },
             { nombre: 'Color del texto', colorClass: 'text-color', color: '#000000' },
+            { nombre: 'Contendor del chat receptor', colorClass: 'chat-receiver-container', color: '#D894DD' },
+            { nombre: 'Contendor del chat remitente', colorClass: 'chat-sender-container', color: '#D8B1EE' },
+            { nombre: 'Color del Texto de chats', colorClass: 'chat-text-color', color: '#000000' },
         ]
     }
 ];

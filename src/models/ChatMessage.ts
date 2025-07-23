@@ -4,7 +4,7 @@ import type { JSONContent } from '@tiptap/react';
 export interface IChatMessage extends Document {
     autor: Types.ObjectId;
     contenido: JSONContent;
-    tipo: 'texto' | 'imagen' | 'archivo' | 'reaccion';
+    tipo: 'texto' | 'imagen' | 'archivo' | 'media' | 'reaccion';
     archivoUrl?: string;
     archivoNombre?: string;
     imagenUrl?: string;
@@ -29,7 +29,7 @@ const ChatMessageSchema = new Schema<IChatMessage>(
         },
         tipo: {
             type: String,
-            enum: ['texto', 'imagen', 'archivo', 'reaccion'],
+            enum: ['texto', 'imagen', 'archivo', 'media', 'reaccion'],
             default: 'texto'
         },
         archivoUrl: String,

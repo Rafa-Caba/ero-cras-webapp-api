@@ -4,9 +4,10 @@ import ChatMessage from '../models/ChatMessage';
 import verificarToken from '../middlewares/auth';
 import { setCreadoPor } from '../utils/setCreadoPor';
 import { registrarLog } from '../utils/registrarLog';
-import { uploadChatImage } from '../middlewares/cloudinaryStorage';
+import { streamUpload, uploadChatFile, uploadChatImage, uploadChatMedia } from '../middlewares/cloudinaryStorage';
 import mongoose from 'mongoose';
 import { TIPOS_MENSAJE_VALIDOS } from '../utils/constantes';
+import { esExtensionMediaValida } from '../utils/validarMimeMedia';
 
 const router = express.Router();
 
@@ -85,6 +86,7 @@ router.post('/', verificarToken, setCreadoPor, async (req: Request, res: Respons
     }
 });
 
+// Subir Imagen del Chat
 router.post('/upload-image', verificarToken, uploadChatImage.single('imagen'), setCreadoPor, async (req: Request, res: Response): Promise<void> => {
     try {
         const { contenido, autor } = req.body;
@@ -197,5 +199,159 @@ router.patch('/:id/reaccion', verificarToken, async (req: RequestConUsuario, res
     }
 });
 
+// Subir File del Chat
+// router.post('/upload-file', verificarToken, uploadChatFile.single('archivo'), setCreadoPor, async (req: RequestConUsuario, res: Response): Promise<void> => {
+//     try {
+//         const { autor } = req.body;
+
+//         if (!req.file) {
+//             res.status(400).json({ mensaje: 'No se recibió ningún archivo' });
+//             return;
+//         }
+
+//         console.log({
+//             file: req.file
+//         });
+
+//         const tipo = 'archivo';
+
+//         if (!TIPOS_MENSAJE_VALIDOS.includes(tipo)) {
+//             res.status(400).json({ mensaje: 'Tipo de mensaje no válido' });
+//             return;
+//         }
+
+//         const mensaje = new ChatMessage({
+//             autor,
+//             contenido: {}, // No se usa en archivos
+//             tipo: 'archivo',
+//             archivoUrl: req.file?.path || '',
+//             archivoNombre: req.file?.originalname || '',
+//             creadoPor: req.body.creadoPor,
+//         });
+
+//         console.log({
+//             ...mensaje
+//         });
+
+//         await mensaje.save();
+//         await mensaje.populate('autor', 'nombre username fotoPerfilUrl');
+
+//         if (!mensaje._id) return;
+
+//         await registrarLog({
+//             req,
+//             coleccion: 'ChatMessage',
+//             accion: 'crear',
+//             referenciaId: mensaje._id.toString(),
+//             cambios: { nuevo: mensaje }
+//         });
+
+//         if (req.app.get('io')) {
+//             const io = req.app.get('io');
+//             io.emit('nuevo-mensaje', mensaje);
+//         }
+
+//         res.status(201).json({ mensaje });
+//     } catch (error: any) {
+//         console.error('[Error al subir archivo]', error?.message || error);
+//         res.status(500).json({ mensaje: 'Error al subir archivo' });
+//     }
+// });
+router.post('/upload-file', verificarToken, uploadChatFile.single('archivo'), setCreadoPor, async (req: RequestConUsuario, res: Response): Promise<void> => {
+    try {
+        const { autor } = req.body;
+
+        if (!req.file) {
+            res.status(400).json({ mensaje: 'No se recibió ningún archivo' });
+            return;
+        }
+
+        const resultado = await streamUpload(req.file.buffer, req.file.originalname, 'auto');
+
+        const mensaje = new ChatMessage({
+            autor,
+            contenido: {},
+            tipo: 'archivo',
+            archivoUrl: resultado.secure_url,
+            archivoNombre: req.file.originalname,
+            creadoPor: req.body.creadoPor,
+        });
+
+        await mensaje.save();
+        await mensaje.populate('autor', 'nombre username fotoPerfilUrl');
+
+        if (!mensaje._id) return;
+
+        await registrarLog({
+            req,
+            coleccion: 'ChatMessage',
+            accion: 'crear',
+            referenciaId: mensaje._id.toString(),
+            cambios: { nuevo: mensaje },
+        });
+
+        if (req.app.get('io')) {
+            const io = req.app.get('io');
+            io.emit('nuevo-mensaje', mensaje);
+        }
+
+        res.status(201).json({ mensaje });
+    } catch (error: any) {
+        console.error('[Error al subir archivo]', error.message || error);
+        res.status(500).json({ mensaje: 'Error interno al subir archivo', error: error.message });
+    }
+}
+);
+
+
+// Subir Media del Chat
+router.post('/upload-media', verificarToken, uploadChatMedia.single('media'), setCreadoPor, async (req: RequestConUsuario, res: Response): Promise<void> => {
+    try {
+        const { autor } = req.body;
+
+        if (!req.file) {
+            res.status(400).json({ mensaje: 'No se recibió ningún archivo de media' });
+            return;
+        }
+
+        if (!esExtensionMediaValida(req.file.originalname)) {
+            res.status(400).json({ mensaje: 'Extensión de archivo no permitida' });
+            return;
+        }
+
+        const tipo = 'media';
+
+        const mensaje = new ChatMessage({
+            autor,
+            contenido: {},
+            tipo,
+            archivoUrl: req.file?.path || '',
+            archivoNombre: req.file?.originalname || '',
+            creadoPor: req.body.creadoPor,
+        });
+
+        await mensaje.save();
+        await mensaje.populate('autor', 'nombre username fotoPerfilUrl');
+
+        if (!mensaje._id) return;
+
+        await registrarLog({
+            req,
+            coleccion: 'ChatMessage',
+            accion: 'crear',
+            referenciaId: mensaje._id.toString(),
+            cambios: { nuevo: mensaje }
+        });
+
+        if (req.app.get('io')) {
+            const io = req.app.get('io');
+            io.emit('nuevo-mensaje', mensaje);
+        }
+
+        res.status(201).json({ mensaje });
+    } catch (error) {
+        res.status(500).json({ mensaje: 'Error al subir archivo de media', error });
+    }
+});
 
 export default router;
