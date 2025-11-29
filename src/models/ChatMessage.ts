@@ -5,17 +5,18 @@ export interface IChatMessage extends Document {
     content: any; // TipTap JSON
     type: 'TEXT' | 'IMAGE' | 'FILE' | 'MEDIA' | 'REACTION' | 'AUDIO' | 'VIDEO';
     
-    // Generic storage for any media URL
     fileUrl?: string; 
     filename?: string;
     
     reactions: Array<{
+        user: Types.ObjectId;
         emoji: string;
-        username: string;
     }>;
     
     replyTo?: Types.ObjectId;
     createdBy?: Types.ObjectId;
+    createdAt: Date;
+    updatedAt: Date;
 }
 
 const ChatMessageSchema = new Schema<IChatMessage>(
@@ -29,13 +30,13 @@ const ChatMessageSchema = new Schema<IChatMessage>(
             uppercase: true 
         },
         
-        // We use fileUrl for EVERYTHING (Image, Audio, Video, Pdf)
         fileUrl: { type: String, default: '' },
         filename: { type: String, default: '' },
         
+        // 🛠️ FIX: Schema definition for reactions with User Ref
         reactions: [{
-            emoji: String,
-            username: String 
+            user: { type: Schema.Types.ObjectId, ref: 'User' },
+            emoji: String
         }],
         
         replyTo: { type: Schema.Types.ObjectId, ref: 'ChatMessage', default: null },
@@ -51,7 +52,7 @@ ChatMessageSchema.set('toJSON', {
         ret.id = ret._id;
         delete ret._id;
         
-        // Convenience aliases for Frontend which expects specific keys
+        // Convenience aliases
         if (ret.type === 'IMAGE' || ret.type === 'VIDEO') {
             ret.imageUrl = ret.fileUrl;
         } else if (ret.type === 'AUDIO') {

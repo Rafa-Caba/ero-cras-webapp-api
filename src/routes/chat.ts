@@ -1,9 +1,7 @@
 import express, { Request, Response } from 'express';
-import mongoose from 'mongoose';
 import ChatMessage from '../models/ChatMessage';
 import verifyToken, { RequestWithUser } from '../middlewares/auth';
 import { setCreatedBy } from '../utils/setCreatedBy';
-import { registerLog } from '../utils/logger';
 import { 
     streamUpload, 
     uploadChatFile, 
@@ -16,7 +14,7 @@ import { notifyCommunity } from '../utils/notificationHelper';
 
 const router = express.Router();
 
-// GET HISTORY
+// 🟣 GET HISTORY
 router.get(['/', '/history'], verifyToken, async (req: Request, res: Response): Promise<void> => {
     try {
         const { limit = 50, before } = req.query;
@@ -29,17 +27,17 @@ router.get(['/', '/history'], verifyToken, async (req: Request, res: Response): 
         const messages = await ChatMessage.find(query)
             .sort({ createdAt: -1 })
             .limit(Number(limit))
-            // Populate using English fields from User Model
             .populate('author', 'name username imageUrl') 
-            .populate('reactions.user', 'username'); 
+            .populate('reactions.user', 'username'); // This now works with the updated model!
 
         res.json(messages.reverse());
-    } catch (error) {
-        res.status(500).json({ message: 'Error retrieving messages', error });
+    } catch (error: any) {
+        console.error("History Error:", error);
+        res.status(500).json({ message: 'Error retrieving messages', error: error.message });
     }
 });
 
-// CREATE MESSAGE (Text)
+// 🟣 CREATE MESSAGE (Text)
 router.post('/', verifyToken, setCreatedBy, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
         const { content, type, fileUrl, filename } = req.body;
@@ -70,7 +68,7 @@ router.post('/', verifyToken, setCreatedBy, async (req: RequestWithUser, res: Re
     }
 });
 
-// UPLOAD IMAGE
+// 🟣 UPLOAD IMAGE
 router.post('/upload-image', verifyToken, uploadChatImage.single('file'), setCreatedBy, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
         const { content } = req.body;
@@ -100,7 +98,7 @@ router.post('/upload-image', verifyToken, uploadChatImage.single('file'), setCre
     }
 });
 
-// UPLOAD FILE
+// 🟣 UPLOAD FILE
 router.post('/upload-file', verifyToken, uploadChatFile.single('file'), setCreatedBy, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
         const author = req.body.author || req.body.createdBy;
@@ -128,7 +126,7 @@ router.post('/upload-file', verifyToken, uploadChatFile.single('file'), setCreat
     }
 });
 
-// UPLOAD MEDIA
+// 🟣 UPLOAD MEDIA
 router.post('/upload-media', verifyToken, uploadChatMedia.single('file'), setCreatedBy, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
         const author = req.body.author || req.body.createdBy;
@@ -159,7 +157,7 @@ router.post('/upload-media', verifyToken, uploadChatMedia.single('file'), setCre
     }
 });
 
-// PATCH: ADD/REMOVE REACTION
+// 🟣 PATCH REACTION
 router.patch('/:id/reaction', verifyToken, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
         const messageId = req.params.id;
@@ -167,32 +165,35 @@ router.patch('/:id/reaction', verifyToken, async (req: RequestWithUser, res: Res
         const userId = req.user?.id;
 
         const message = await ChatMessage.findById(messageId);
-        if (!message) {
-            res.status(404).json({ message: 'Message not found' });
-            return;
-        }
-
+        if (!message) { res.status(404).json({ message: 'Message not found' }); return; }
         if (!userId) return;
 
-        const hasReacted = message.reactions?.some(r =>
-            r.username === userId.toString() || 
-            (r as any).user?.toString() === userId.toString()
-        );
-        
-        await message.save();
-        await message.populate('author', 'name username imageUrl');
-        
-        // Emit Update
-        if (req.app.get('io')) {
-            const io = req.app.get('io');
-            io.emit('message-updated', message.toJSON());
+        // Toggle Logic
+        const existingIndex = message.reactions.findIndex(r => r.user.toString() === userId);
+
+        if (existingIndex > -1) {
+            if (message.reactions[existingIndex].emoji === emoji) {
+                // Remove if same emoji clicked
+                message.reactions.splice(existingIndex, 1);
+            } else {
+                // Update if different
+                message.reactions[existingIndex].emoji = emoji;
+            }
+        } else {
+            // Add new
+            // @ts-ignore - Mongoose Types handling
+            message.reactions.push({ user: userId, emoji });
         }
 
-        notifyCommunity(req.user?.id, req.user?.username || 'User', 'CHAT', message);
+        await message.save();
+        await message.populate('author', 'name username imageUrl');
+        await message.populate('reactions.user', 'username');
+
+        if (req.app.get('io')) req.app.get('io').emit('message-updated', message.toJSON());
 
         res.json({ message });
-    } catch (error) {
-        res.status(500).json({ message: 'Error updating reactions', error });
+    } catch (error: any) {
+        res.status(500).json({ message: 'Error updating reactions', error: error.message });
     }
 });
 
