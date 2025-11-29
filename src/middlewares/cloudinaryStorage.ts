@@ -1,162 +1,142 @@
 import { Request } from 'express';
+import multer, { StorageEngine } from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
-import { CloudinaryStorage } from 'multer-storage-cloudinary';
-import multer from 'multer';
-import { Readable } from 'stream';
+import dotenv from 'dotenv';
 
-// 🟢 Upload para Usuarios
-export const uploadUserImage = multer({
-    storage: new CloudinaryStorage({
-        cloudinary,
-        params: {
-            folder: 'ero-cras-imagenes/usuarios',
-            allowed_formats: ['jpg', 'png', 'jpeg', 'gif'],
-            public_id: (req: Request, file: Express.Multer.File): string => {
-                const nombre = file.originalname.split('.')[0];
-                const timestamp = Date.now();
-                return `usuario_${nombre}_${timestamp}`;
-            },
-            transformation: [{ width: 1000, height: 1000, crop: 'limit' }]
-        } as any
-    })
+dotenv.config();
+
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// 🟣 Upload para Galería
-export const uploadGalleryImage = multer({
-    storage: new CloudinaryStorage({
-        cloudinary,
-        params: {
-            folder: 'ero-cras-imagenes/galeria',
-            allowed_formats: ['jpg', 'png', 'jpeg', 'gif'],
-            public_id: (req: Request, file: Express.Multer.File): string => {
-                const nombre = file.originalname.split('.')[0];
-                const timestamp = Date.now();
-                return `galeria_${nombre}_${timestamp}`;
+class CustomCloudinaryStorage implements StorageEngine {
+    private folder: string;
+    private resourceType: 'image' | 'video' | 'auto';
+    private allowedFormats: string[];
+
+    constructor(options: { folder: string; resourceType?: 'image' | 'video' | 'auto'; allowedFormats?: string[] }) {
+        this.folder = options.folder;
+        this.resourceType = options.resourceType || 'image';
+        this.allowedFormats = options.allowedFormats || ['jpg', 'png', 'jpeg'];
+    }
+
+    _handleFile(req: Request, file: Express.Multer.File, cb: (error?: any, info?: any) => void): void {
+        const cleanName = file.originalname.split('.')[0].replace(/[^a-zA-Z0-9]/g, "_");
+        const public_id = `${cleanName}_${Date.now()}`;
+
+        const uploadStream = cloudinary.uploader.upload_stream(
+            {
+                folder: this.folder,
+                resource_type: this.resourceType,
+                public_id: public_id,
+                format: undefined,
             },
-            transformation: [{ width: 1000, height: 1000, crop: 'limit' }]
-        } as any
-    })
-});
-
-// 🆕 Upload para miembros
-export const uploadMiembroImage = multer({
-    storage: new CloudinaryStorage({
-        cloudinary,
-        params: {
-            folder: 'ero-cras-imagenes/miembros',
-            allowed_formats: ['jpg', 'png', 'jpeg', 'gif'],
-            public_id: (req: Request, file: Express.Multer.File): string => {
-                const nombre = file.originalname.split('.')[0];
-                const timestamp = Date.now();
-                return `miembro_${nombre}_${timestamp}`;
-            },
-            transformation: [{ width: 1000, height: 1000, crop: 'limit' }]
-        } as any
-    })
-});
-
-// 🆕 Upload para blog posts
-export const uploadBlogImage = multer({
-    storage: new CloudinaryStorage({
-        cloudinary,
-        params: {
-            folder: 'ero-cras-imagenes/blogposts',
-            allowed_formats: ['jpg', 'png', 'jpeg', 'gif'],
-            public_id: (req: Request, file: Express.Multer.File): string => {
-                const nombre = file.originalname.split('.')[0];
-                const timestamp = Date.now();
-                return `post_${nombre}_${timestamp}`;
-            },
-            transformation: [{ width: 1000, height: 1000, crop: 'limit' }]
-        } as any
-    })
-});
-
-// 🆕 Upload para avisos
-export const uploadAvisoImage = multer({
-    storage: new CloudinaryStorage({
-        cloudinary,
-        params: {
-            folder: 'ero-cras-imagenes/avisos',
-            allowed_formats: ['jpg', 'png', 'jpeg', 'gif'],
-            public_id: (req: Request, file: Express.Multer.File): string => {
-                const nombre = file.originalname.split('.')[0];
-                const timestamp = Date.now();
-                return `aviso_${nombre}_${timestamp}`;
-            },
-            transformation: [{ width: 1000, height: 1000, crop: 'limit' }]
-        } as any
-    })
-});
-
-// 🆕 Upload para chats
-export const uploadChatImage = multer({
-    storage: new CloudinaryStorage({
-        cloudinary,
-        params: {
-            folder: 'ero-cras-imagenes/chats',
-            allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
-            public_id: (req: Request, file: Express.Multer.File): string => {
-                const nombre = file.originalname.split('.')[0];
-                const timestamp = Date.now();
-                return `chat_${nombre}_${timestamp}`;
-            },
-            transformation: [{ width: 1000, height: 1000, crop: 'limit' }]
-        } as any
-    })
-});
-
-
-// 🆕 Upload para Media en Chats 
-export const uploadChatMedia = multer({
-    storage: new CloudinaryStorage({
-        cloudinary,
-        params: {
-            folder: 'ero-cras-archivos/chats/media',
-            resource_type: 'video',
-            allowed_formats: ['mp3', 'wav', 'mp4', 'mov', 'webm'],
-            public_id: (req: Request, file: Express.Multer.File): string => {
-                const nombre = file.originalname.split('.')[0];
-                const timestamp = Date.now();
-                return `media_${nombre}_${timestamp}`;
+            (error, result) => {
+                if (error) return cb(error);
+                if (!result) return cb(new Error('Cloudinary upload failed - no result'));
+                
+                cb(null, {
+                    path: result.secure_url,
+                    filename: result.public_id,
+                    size: result.bytes,
+                    mimetype: result.format ? `${this.resourceType}/${result.format}` : file.mimetype
+                });
             }
-        } as any
+        );
+
+        file.stream.pipe(uploadStream);
+    }
+
+    _removeFile(req: Request, file: Express.Multer.File, cb: (error: Error | null) => void): void {
+        cloudinary.uploader.destroy(file.filename, { resource_type: this.resourceType }, (err) => {
+            cb(err || null);
+        });
+    }
+}
+
+// 🟢 EXPORTS (Strict English Naming)
+
+export const uploadUserImage = multer({
+    storage: new CustomCloudinaryStorage({
+        folder: 'ero-cras-media/users',
+        allowedFormats: ['jpg', 'png', 'jpeg', 'gif']
     })
 });
 
+export const uploadGalleryImage = multer({
+    storage: new CustomCloudinaryStorage({
+        folder: 'ero-cras-media/gallery',
+        resourceType: 'auto', 
+        allowedFormats: ['jpg', 'png', 'jpeg', 'gif', 'mp4', 'mov', 'webm']
+    })
+});
 
-// 🆕 Upload para Files en Chats
+export const uploadMemberImage = multer({
+    storage: new CustomCloudinaryStorage({
+        folder: 'ero-cras-media/members'
+    })
+});
+
+export const uploadBlogImage = multer({
+    storage: new CustomCloudinaryStorage({
+        folder: 'ero-cras-media/blog-posts'
+    })
+});
+
+export const uploadAnnouncementImage = multer({
+    storage: new CustomCloudinaryStorage({
+        folder: 'ero-cras-media/announcements'
+    })
+});
+
+export const uploadChatImage = multer({
+    storage: new CustomCloudinaryStorage({
+        folder: 'ero-cras-media/chats/images'
+    })
+});
+
+export const uploadChatMedia = multer({
+    storage: new CustomCloudinaryStorage({
+        folder: 'ero-cras-media/chats/media',
+        resourceType: 'auto', 
+        allowedFormats: [
+            'mp3', 'wav', 'mp4', 'mov', 'webm', 'm4a', 'aac', 'ogg',
+            'pdf', 'doc', 'docx', 'txt', 'xls', 'xlsx', 'ppt', 'pptx'
+        ]
+    })
+});
+
+export const uploadSongAudio = multer({
+    storage: new CustomCloudinaryStorage({
+        folder: 'ero-cras-media/songs/audio',
+        resourceType: 'video', // Cloudinary treats audio as video resource type
+        allowedFormats: ['mp3', 'm4a', 'wav', 'aac']
+    })
+});
+
 const storage = multer.memoryStorage();
 export const uploadChatFile = multer({ storage });
 
 export const streamUpload = (buffer: Buffer, originalName: string, resourceType: 'auto' | 'image' | 'video' | 'raw' = 'auto'): Promise<any> => {
     return new Promise((resolve, reject) => {
-        const timestamp = Date.now();
-
-        // Separa nombre y extensión correctamente
-        const partes = originalName.split('.');
-        const extension = partes.pop(); // quita y guarda la extensión
-        const nombreBase = partes.join('.');
-
-        // Crea el nombre con timestamp ANTES de la extensión
-        const nombreFinal = `archivo_${nombreBase}_${timestamp}.${extension}`;
+        const uniqueId = `chatfile_${Date.now()}_${Math.floor(Math.random() * 9999)}`;
+        const publicIdPath = `ero-cras-media/chats/files/${uniqueId}`;
 
         const stream = cloudinary.uploader.upload_stream(
             {
                 resource_type: resourceType,
-                folder: 'ero-cras-archivos/chats/files',
-                public_id: nombreFinal,
-                use_filename: false,
-                unique_filename: false
+                folder: 'ero-cras-media/chats/files',
+                public_id: publicIdPath,
             },
-            (error, result) => {
+            (error: any, result: any) => {
                 if (result) resolve(result);
                 else reject(error);
             }
         );
-
+        
+        const { Readable } = require('stream');
         Readable.from(buffer).pipe(stream);
     });
 };
-
-

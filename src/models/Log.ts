@@ -1,44 +1,58 @@
 import { Schema, model, Document, Types } from 'mongoose';
 
 export interface ILog extends Document {
-    accion: 'crear' | 'actualizar' | 'eliminar' | 'agregar_reaccion' | 'quitar_reaccion';
-    coleccion: string; // por ejemplo: 'Aviso', 'Canto', etc.
-    referenciaId: Types.ObjectId; // ID del documento afectado
-    usuario: Types.ObjectId; // quién realizó la acción
-    descripcion?: string;
+    action: 'create' | 'update' | 'delete' | 'add_reaction' | 'remove_reaction';
+    collectionName: string;
+    referenceId: Types.ObjectId;
+    user: Types.ObjectId;
+    description?: string;
+    changes?: Record<string, any>;
     createdAt?: Date;
 }
 
 const LogSchema = new Schema<ILog>(
     {
-        accion: {
+        action: {
             type: String,
-            enum: ['crear', 'actualizar', 'eliminar', 'agregar_reaccion', 'quitar_reaccion'],
+            enum: ['create', 'update', 'delete', 'add_reaction', 'remove_reaction'],
             required: true
         },
-        coleccion: {
+        collectionName: {
             type: String,
             required: true
         },
-        referenciaId: {
+        referenceId: {
             type: Schema.Types.ObjectId,
             required: true
         },
-        usuario: {
+        user: {
             type: Schema.Types.ObjectId,
-            ref: 'Usuario',
+            ref: 'User', 
             required: true
         },
-        descripcion: {
+        description: {
             type: String,
             default: ''
+        },
+        changes: { 
+            type: Schema.Types.Mixed, 
+            default: {} 
         }
     },
     {
-        timestamps: { createdAt: true, updatedAt: false }, // Solo guardamos la fecha de creación
+        timestamps: { createdAt: true, updatedAt: false }, 
         versionKey: false
     }
 );
+
+LogSchema.set('toJSON', {
+    virtuals: true,
+    versionKey: false,
+    transform: function (doc, ret) {
+        ret.id = ret._id;
+        delete ret._id;
+    }
+});
 
 const Log = model<ILog>('Log', LogSchema);
 

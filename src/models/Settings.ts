@@ -1,58 +1,67 @@
-import mongoose, { Schema, model, Document } from 'mongoose';
-import type { JSONContent } from '@tiptap/react';
+import { Schema, model, Document, Types } from 'mongoose';
 
-export interface ISetting extends Document {
-    tituloWeb: string;
+export interface ISettings extends Document {
+    webTitle: string;
+    contactPhone: string;
+    logoUrl?: string;
+    logoPublicId?: string;
 
-    socialLinks: {
+    socials: {
         facebook: string;
         instagram: string;
         youtube: string;
         whatsapp: string;
-        correo: string;
+        email: string;
     };
 
-    leyendasInicio: {
+    homeLegends: {
         principal: string;
-        secundaria: string;
+        secondary: string;
     };
 
-    historiaNosotros: JSONContent;
-    telefonoContacto: string;
-
-    creadoPor?: mongoose.Types.ObjectId;
-    actualizadoPor?: mongoose.Types.ObjectId;
-
-    createdAt?: Date;
-    updatedAt?: Date;
+    history: any; // TipTap
+    
+    createdBy?: Types.ObjectId;
+    updatedBy?: Types.ObjectId;
 }
 
-const SettingSchema = new Schema<ISetting>(
+const SettingsSchema = new Schema<ISettings>(
     {
-        tituloWeb: { type: String, default: 'Ero Cras Oficial' },
+        webTitle: { type: String, default: 'Coro App' },
+        contactPhone: { type: String, default: '' },
+        logoUrl: { type: String, default: '' },
+        logoPublicId: { type: String, default: null },
 
-        socialLinks: {
+        socials: {
             facebook: { type: String, default: '' },
             instagram: { type: String, default: '' },
             youtube: { type: String, default: '' },
             whatsapp: { type: String, default: '' },
-            correo: { type: String, default: '' }
+            email: { type: String, default: '' }
         },
 
-        leyendasInicio: {
+        homeLegends: {
             principal: { type: String, default: '' },
-            secundaria: { type: String, default: '' }
+            secondary: { type: String, default: '' }
         },
 
-        historiaNosotros: { type: Schema.Types.Mixed, required: true },
-        telefonoContacto: { type: String, default: '' },
-
-        // 👇 Esto probablemente falta
-        creadoPor: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario' },
-        actualizadoPor: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario' },
+        history: { type: Schema.Types.Mixed, default: {} },
+        
+        // 🛠️ FIX: Added fields to Schema
+        createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+        updatedBy: { type: Schema.Types.ObjectId, ref: 'User' }
     },
     { timestamps: true }
 );
 
-const Settings = model<ISetting>('Setting', SettingSchema);
+SettingsSchema.set('toJSON', {
+    virtuals: true,
+    versionKey: false,
+    transform: function (doc, ret) {
+        ret.id = ret._id;
+        delete ret._id;
+    }
+});
+
+const Settings = model<ISettings>('Settings', SettingsSchema);
 export default Settings;

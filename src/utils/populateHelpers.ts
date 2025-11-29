@@ -1,17 +1,16 @@
-import mongoose from 'mongoose';
-import { Query } from 'mongoose';
+import mongoose, { Query } from 'mongoose';
 
 /**
- * Aplica populate para campos "creadoPor" y "actualizadoPor" si existen en el schema
+ * Applies populate for "createdBy" and "updatedBy" fields
  */
 export const applyPopulateAutores = <T>(query: Query<T[], any>) => {
     return query
-        .populate('creadoPor', 'nombre username')
-        .populate('actualizadoPor', 'nombre username');
+        .populate('createdBy', 'name username')
+        .populate('updatedBy', 'name username');
 };
 
 export const applyPopulateAutorSingle = <T>(query: Query<T | null, any>) => {
     return query
-        .populate('creadoPor', 'nombre username')
-        .populate('actualizadoPor', 'nombre username');
+        .populate('createdBy', 'name username')
+        .populate('updatedBy', 'name username');
 };

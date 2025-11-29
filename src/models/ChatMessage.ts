@@ -1,51 +1,64 @@
 import { Schema, model, Document, Types } from 'mongoose';
-import type { JSONContent } from '@tiptap/react';
 
 export interface IChatMessage extends Document {
-    autor: Types.ObjectId;
-    contenido: JSONContent;
-    tipo: 'texto' | 'imagen' | 'archivo' | 'media' | 'reaccion';
-    archivoUrl?: string;
-    archivoNombre?: string;
-    imagenUrl?: string;
-    imagenPublicId?: string;
-    reacciones?: {
+    author: Types.ObjectId;
+    content: any; // TipTap JSON
+    type: 'TEXT' | 'IMAGE' | 'FILE' | 'MEDIA' | 'REACTION' | 'AUDIO' | 'VIDEO';
+    
+    // Generic storage for any media URL
+    fileUrl?: string; 
+    filename?: string;
+    
+    reactions: Array<{
         emoji: string;
-        usuario: Types.ObjectId;
-    }[];
-    createdAt: Date;
+        username: string;
+    }>;
+    
+    replyTo?: Types.ObjectId;
+    createdBy?: Types.ObjectId;
 }
 
 const ChatMessageSchema = new Schema<IChatMessage>(
     {
-        autor: {
-            type: Schema.Types.ObjectId,
-            ref: 'Usuario',
-            required: true
+        author: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        content: { type: Schema.Types.Mixed, default: {} },
+        type: { 
+            type: String, 
+            enum: ['TEXT', 'IMAGE', 'FILE', 'MEDIA', 'REACTION', 'AUDIO', 'VIDEO'], 
+            default: 'TEXT',
+            uppercase: true 
         },
-        contenido: {
-            type: Schema.Types.Mixed,
-            required: true
-        },
-        tipo: {
-            type: String,
-            enum: ['texto', 'imagen', 'archivo', 'media', 'reaccion'],
-            default: 'texto'
-        },
-        archivoUrl: String,
-        archivoNombre: String,
-        imagenUrl: String,
-        imagenPublicId: String,
-
-        reacciones: [
-            {
-                emoji: { type: String, required: true },
-                usuario: { type: Schema.Types.ObjectId, ref: 'Usuario', required: true }
-            }
-        ]
+        
+        // We use fileUrl for EVERYTHING (Image, Audio, Video, Pdf)
+        fileUrl: { type: String, default: '' },
+        filename: { type: String, default: '' },
+        
+        reactions: [{
+            emoji: String,
+            username: String 
+        }],
+        
+        replyTo: { type: Schema.Types.ObjectId, ref: 'ChatMessage', default: null },
+        createdBy: { type: Schema.Types.ObjectId, ref: 'User' }
     },
-    { timestamps: { createdAt: true, updatedAt: false } }
+    { timestamps: true }
 );
+
+ChatMessageSchema.set('toJSON', {
+    virtuals: true,
+    versionKey: false,
+    transform: function (doc, ret) {
+        ret.id = ret._id;
+        delete ret._id;
+        
+        // Convenience aliases for Frontend which expects specific keys
+        if (ret.type === 'IMAGE' || ret.type === 'VIDEO') {
+            ret.imageUrl = ret.fileUrl;
+        } else if (ret.type === 'AUDIO') {
+            ret.audioUrl = ret.fileUrl;
+        }
+    }
+});
 
 const ChatMessage = model<IChatMessage>('ChatMessage', ChatMessageSchema);
 export default ChatMessage;

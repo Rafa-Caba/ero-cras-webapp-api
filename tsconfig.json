@@ -12,11 +12,12 @@
         "moduleResolution": "node",
         "types": [
             "node"
-        ]
+        ],
+        "typeRoots": ["./node_modules/@types", "./src/types"] 
     },
     "include": [
         "src"
-    ],
+, "src/utils/.ts"    ],
     "exclude": [
         "node_modules",
         "dist"

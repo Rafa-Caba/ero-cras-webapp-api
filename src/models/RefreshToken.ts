@@ -15,17 +15,17 @@ const RefreshTokenSchema = new Schema<IRefreshToken>(
         },
         userId: {
             type: Schema.Types.ObjectId,
-            ref: 'Usuario',
+            ref: 'User',
             required: true
         },
         createdAt: {
             type: Date,
             default: Date.now,
-            expires: '7d' // Token expira automáticamente en 7 días
+            expires: '7d' 
         }
     },
     {
-        timestamps: false // No usamos updatedAt/createdAt automáticos aquí
+        timestamps: false
     }
 );
 

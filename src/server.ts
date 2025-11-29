@@ -4,102 +4,115 @@ dotenv.config();
 import express, { Application, NextFunction, Request, Response } from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
-
 import http from 'http';
-import { iniciarSockets } from './socketServer';
+import { Server as SocketIOServer } from 'socket.io';
+import { configuringSockets } from './socket';
 
-import loginRoutes from './routes/login';
-import themesRoutes from './routes/themes';
-import cantosRoutes from './routes/cantos';
-import usuariosRoutes from './routes/usuarios';
-import miembrosRoutes from './routes/miembros';
-import uploadsRoutes from './routes/uploads';
-import blogPostRoutes from './routes/blogPosts';
-import avisoRoutes from './routes/avisos';
-import settingRoutes from './routes/settings';
-import logsRoutes from './routes/logs';
-import tiposCantoRoutes from './routes/tiposCanto';
-import themesGroups from './routes/themeGroups';
+import authRoutes from './routes/auth';
+import userRoutes from './routes/user';
+import songRoutes from './routes/song';
+import songTypeRoutes from './routes/songType';
+import memberRoutes from './routes/member';
+import galleryRoutes from './routes/gallery';
+import blogRoutes from './routes/blog';
+import announcementRoutes from './routes/announcement';
+import settingsRoutes from './routes/setting';
+import logRoutes from './routes/log';
+import themeRoutes from './routes/theme';
 import chatRoutes from './routes/chat';
+
 import { ensureSettingsExists } from './utils/initSettings';
-import { crearGrupoPredeterminado } from './utils/inicializarGrupoPorDefecto';
+import { createDefaultThemes } from './utils/initialThemes';
 
 export const app: Application = express();
 
-// Middlewares
+// 1. CONFIGURATION
+const PORT = process.env.PORT || 3001;
+const MONGO_URI = process.env.MONGO_URI || '';
+
+if (!MONGO_URI) {
+    console.error('Missing MONGO_URI in .env file');
+    process.exit(1);
+}
+
+// 2. MIDDLEWARES & CORS
+const whitelist = [
+    'http://localhost:5173', // Web Dev
+    'http://localhost:8081', // Mobile Dev
+    'https://ero-cras-webapp.vercel.app', // Web Prod
+    'https://ero-cras-webapp-api-production.up.railway.app' // Self / API
+];
+
 app.use(cors({
     origin: (origin, callback) => {
-        const whitelist = [
-            'http://localhost:5173',
-            'https://ero-cras-webapp.vercel.app',
-            'https://ero-cras-webapp-api-production.up.railway.app'
-        ];
-
         if (!origin || whitelist.includes(origin)) {
             callback(null, true);
         } else {
+            console.log("Blocked by CORS:", origin);
             callback(new Error('Not allowed by CORS'));
         }
     },
     credentials: true
 }));
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
-// Rutas
-app.use('/api/login', loginRoutes);
-app.use('/api/cantos', cantosRoutes);
-app.use('/api/usuarios', usuariosRoutes);
-app.use('/api/miembros', miembrosRoutes);
-
-app.use('/api/uploads', uploadsRoutes);
-app.use('/api/themes', themesRoutes);
-app.use('/api/blog-posts', blogPostRoutes);
-app.use('/api/avisos', avisoRoutes);
-app.use('/api/settings', settingRoutes);
-app.use('/api/logs', logsRoutes);
-app.use('/api/tipos-canto', tiposCantoRoutes);
-app.use('/api/themes-group', themesGroups);
+// 3. ROUTES (Refactored English Names)
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/songs', songRoutes);
+app.use('/api/song-types', songTypeRoutes);
+app.use('/api/members', memberRoutes);
+app.use('/api/gallery', galleryRoutes);
+app.use('/api/blog', blogRoutes);
+app.use('/api/announcements', announcementRoutes);
+app.use('/api/settings', settingsRoutes);
+app.use('/api/logs', logRoutes);
+app.use('/api/themes', themeRoutes);
 app.use('/api/chat', chatRoutes);
 
-// 404 para rutas no encontradas
+// 4. ERROR HANDLING
 app.use((req: Request, res: Response) => {
     res.status(404).json({
-        mensaje: 'Ruta no encontrada',
-        metodo: req.method,
-        ruta: req.originalUrl
+        message: 'Route not found',
+        method: req.method,
+        path: req.originalUrl
     });
 });
 
-// Middleware general de errores
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
     console.error(err.stack);
-    res.status(500).json({ mensaje: 'Error interno del servidor' });
+    res.status(500).json({ message: 'Internal Server Error' });
 });
 
-// Conexión a la base de datos
-const PORT = process.env.PORT || 3001;
-const MONGO_URI = process.env.MONGO_URI || '';
-
-if (!MONGO_URI) {
-    console.error('Falta MONGO_URI en el archivo .env');
-    process.exit(1);
-}
-
+// 5. SERVER STARTUP
 mongoose.connect(MONGO_URI)
     .then(async () => {
+        console.log('✅ MongoDB Connected');
         await ensureSettingsExists();
-        await crearGrupoPredeterminado();
+        await createDefaultThemes();
 
-        const servidorHttp = http.createServer(app);
+        const httpServer = http.createServer(app);
 
-        iniciarSockets(servidorHttp);
+        const io = new SocketIOServer(httpServer, {
+            cors: {
+                origin: (origin, callback) => {
+                    if (!origin || whitelist.includes(origin)) callback(null, true);
+                    else callback(new Error('Not allowed by CORS'));
+                },
+                methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+                credentials: true
+            }
+        });
 
-        servidorHttp.listen(PORT, () => {
-            console.log(`🚀 Servidor HTTP+WebSocket en puerto ${PORT}`);
+        app.set('io', io);
+        configuringSockets(io);
+
+        httpServer.listen(PORT, () => {
+            console.log(`🚀 Server running on port ${PORT}`);
         });
     })
     .catch(err => {
-        console.error('Error de conexión a MongoDB:', err);
+        console.error('MongoDB Connection Error:', err);
     });
