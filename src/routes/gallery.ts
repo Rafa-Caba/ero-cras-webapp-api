@@ -4,7 +4,7 @@ import { v2 as cloudinary } from 'cloudinary';
 import { uploadGalleryImage } from '../middlewares/cloudinaryStorage';
 import GalleryImage from '../models/GalleryImage';
 import { setUpdatedBy, setCreatedBy } from '../utils/setCreatedBy';
-import { applyPopulateAutorSingle } from '../utils/populateHelpers';
+import { applyPopulateSingleAuthor } from '../utils/populateHelpers';
 import { registerLog } from '../utils/logger';
 
 const router = express.Router();
@@ -159,7 +159,7 @@ router.put('/:id',
 // Get One
 router.get('/:id', verifyToken, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-        const image = await applyPopulateAutorSingle(GalleryImage.findById(req.params.id));
+        const image = await applyPopulateSingleAuthor(GalleryImage.findById(req.params.id));
         if (!image) {
             res.status(404).json({ message: 'Image not found' });
             return;

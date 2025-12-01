@@ -3,23 +3,22 @@ import SongType from '../models/SongType';
 import verifyToken, { RequestWithUser } from '../middlewares/auth';
 import { setCreatedBy, setUpdatedBy } from '../utils/setCreatedBy';
 import { registerLog } from '../utils/logger';
-import { applyPopulateAutores, applyPopulateAutorSingle } from '../utils/populateHelpers';
+import { applyPopulateAuthors, applyPopulateSingleAuthor } from '../utils/populateHelpers';
 
 const router = express.Router();
 
-// 🟣 PUBLIC ENDPOINT (Get all types)
+// PUBLIC ENDPOINT (Get all types)
 router.get('/public', async (req: Request, res: Response): Promise<void> => {
     try {
         const types = await SongType.find().sort({ order: 1 });
-        
-        // Return object structure to match your legacy/mobile expectation
+
         res.json({ types });
     } catch (err: any) {
         res.status(500).json({ message: 'Error retrieving public song types', error: err.message });
     }
 });
 
-// 🟣 ADMIN LIST (Protected)
+// ADMIN LIST (Protected)
 router.get('/', verifyToken, async (req: Request, res: Response): Promise<void> => {
     try {
         const { all, page, limit } = req.query;
@@ -27,7 +26,7 @@ router.get('/', verifyToken, async (req: Request, res: Response): Promise<void> 
         // If 'all=true', return everything (for dropdowns)
         if (all === 'true' || !page) {
             const queryTypes = SongType.find().sort({ order: 1 });
-            const types = await applyPopulateAutores(queryTypes);
+            const types = await applyPopulateAuthors(queryTypes);
             res.json({ types, totalTypes: types.length });
         } else {
             // Pagination Logic
@@ -43,7 +42,7 @@ router.get('/', verifyToken, async (req: Request, res: Response): Promise<void> 
                 .skip(skip)
                 .limit(limitNum);
 
-            const types = await applyPopulateAutores(queryTypes);
+            const types = await applyPopulateAuthors(queryTypes);
 
             res.json({
                 types,
@@ -56,11 +55,11 @@ router.get('/', verifyToken, async (req: Request, res: Response): Promise<void> 
     }
 });
 
-// 🟣 GET ONE
+// GET ONE
 router.get('/:id', verifyToken, async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const type = await applyPopulateAutorSingle(SongType.findById(id));
+        const type = await applyPopulateSingleAuthor(SongType.findById(id));
 
         if (!type) {
             res.status(404).json({ message: 'Song type not found' });
@@ -72,112 +71,112 @@ router.get('/:id', verifyToken, async (req: Request, res: Response): Promise<voi
     }
 });
 
-// 🟣 CREATE
-router.post('/', 
-    verifyToken, 
-    setCreatedBy, 
+// CREATE
+router.post('/',
+    verifyToken,
+    setCreatedBy,
     async (req: RequestWithUser, res: Response): Promise<void> => {
-    try {
-        // Map fields (Mobile/Web might send 'nombre' legacy or 'name')
-        const name = req.body.name || req.body.nombre;
-        const order = req.body.order || req.body.orden;
-        
-        // 🆕 Hierarchy Fields
-        const parentId = req.body.parentId || null;
-        const isParent = req.body.isParent === true || req.body.isParent === 'true';
+        try {
+            // Map fields (Mobile/Web might send 'nombre' legacy or 'name')
+            const name = req.body.name || req.body.nombre;
+            const order = req.body.order || req.body.orden;
 
-        if (!name) {
-            res.status(400).json({ message: 'Name is required' });
-            return;
+            // 🆕 Hierarchy Fields
+            const parentId = req.body.parentId || null;
+            const isParent = req.body.isParent === true || req.body.isParent === 'true';
+
+            if (!name) {
+                res.status(400).json({ message: 'Name is required' });
+                return;
+            }
+
+            const existing = await SongType.findOne({ name });
+            if (existing) {
+                res.status(409).json({ message: 'A song type with this name already exists.' });
+                return;
+            }
+
+            const newType = new SongType({
+                name,
+                order,
+                parentId,
+                isParent,
+                createdBy: req.body.createdBy
+            });
+
+            await newType.save();
+
+            if (!newType._id) return;
+
+            await registerLog({
+                req: req as any,
+                collection: 'SongTypes',
+                action: 'create',
+                referenceId: newType._id.toString(),
+                changes: { new: newType }
+            });
+
+            res.status(201).json(newType);
+        } catch (err: any) {
+            res.status(500).json({ message: 'Error creating song type', error: err.message });
         }
+    });
 
-        const existing = await SongType.findOne({ name });
-        if (existing) {
-            res.status(409).json({ message: 'A song type with this name already exists.' });
-            return;
-        }
-
-        const newType = new SongType({ 
-            name, 
-            order, 
-            parentId, 
-            isParent,
-            createdBy: req.body.createdBy 
-        });
-        
-        await newType.save();
-
-        if (!newType._id) return;
-
-        await registerLog({
-            req: req as any,
-            collection: 'SongTypes',
-            action: 'create',
-            referenceId: newType._id.toString(),
-            changes: { new: newType }
-        });
-
-        res.status(201).json(newType);
-    } catch (err: any) {
-        res.status(500).json({ message: 'Error creating song type', error: err.message });
-    }
-});
-
-// 🟣 UPDATE
-router.put('/:id', 
-    verifyToken, 
-    setUpdatedBy, 
+// UPDATE
+router.put('/:id',
+    verifyToken,
+    setUpdatedBy,
     async (req: RequestWithUser, res: Response): Promise<void> => {
-    try {
-        const { id } = req.params;
-        
-        const name = req.body.name || req.body.nombre;
-        const order = req.body.order || req.body.orden;
-        const parentId = req.body.parentId;
-        const isParent = req.body.isParent;
+        try {
+            const { id } = req.params;
 
-        const existing = await SongType.findOne({ name });
+            const name = req.body.name || req.body.nombre;
+            const order = req.body.order || req.body.orden;
+            const parentId = req.body.parentId;
+            const isParent = req.body.isParent;
 
-        // Check for duplicates (but allow if it's the same ID)
-        if (existing && existing.id.toString() !== id) {
-            res.status(409).json({ message: 'Another song type with this name already exists.' });
-            return;
+            const existing = await SongType.findOne({ name });
+
+            // Check for duplicates (but allow if it's the same ID)
+            if (existing && existing.id.toString() !== id) {
+                res.status(409).json({ message: 'Another song type with this name already exists.' });
+                return;
+            }
+
+            const updateData: any = {};
+            if (name) updateData.name = name;
+            if (order !== undefined) updateData.order = order;
+            if (parentId !== undefined) updateData.parentId = parentId;
+            if (isParent !== undefined) updateData.isParent = isParent;
+
+            updateData.updatedBy = req.body.updatedBy;
+
+            const updatedType = await SongType.findByIdAndUpdate(
+                id,
+                updateData,
+                { new: true }
+            );
+
+            if (!updatedType) {
+                res.status(404).json({ message: 'Song type not found' });
+                return;
+            }
+
+            await registerLog({
+                req: req as any,
+                collection: 'SongTypes',
+                action: 'update',
+                referenceId: updatedType.id.toString(),
+                changes: { after: updatedType }
+            });
+
+            res.json(updatedType);
+        } catch (err: any) {
+            res.status(500).json({ message: 'Error updating song type', error: err.message });
         }
+    });
 
-        const updateData: any = {};
-        if (name) updateData.name = name;
-        if (order !== undefined) updateData.order = order;
-        if (parentId !== undefined) updateData.parentId = parentId;
-        if (isParent !== undefined) updateData.isParent = isParent;
-        
-        updateData.updatedBy = req.body.updatedBy;
-
-        const updatedType = await SongType.findByIdAndUpdate(
-            id,
-            updateData,
-            { new: true }
-        );
-
-        if (!updatedType) {
-            res.status(404).json({ message: 'Song type not found' });
-            return;
-        }
-
-        await registerLog({
-            req: req as any,
-            collection: 'SongTypes',
-            action: 'update',
-            referenceId: updatedType.id.toString(),
-            changes: { after: updatedType }
-        });
-
-        res.json(updatedType);
-    } catch (err: any) {
-        res.status(500).json({ message: 'Error updating song type', error: err.message });
-    }
-});
-
-// 🟣 DELETE
+// DELETE
 router.delete('/:id', verifyToken, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
         const { id } = req.params;

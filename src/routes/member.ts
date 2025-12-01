@@ -3,7 +3,7 @@ import { v2 as cloudinary } from 'cloudinary';
 import { uploadMemberImage } from '../middlewares/cloudinaryStorage';
 import verifyToken, { RequestWithUser } from '../middlewares/auth';
 import { setUpdatedBy, setCreatedBy } from '../utils/setCreatedBy';
-import { applyPopulateAutores, applyPopulateAutorSingle } from '../utils/populateHelpers';
+import { applyPopulateAuthors, applyPopulateSingleAuthor } from '../utils/populateHelpers';
 import { registerLog } from '../utils/logger';
 import Member from '../models/Member';
 
@@ -48,7 +48,7 @@ router.get('/search', verifyToken, async (req: Request, res: Response): Promise<
 
     try {
         const regex = new RegExp(query, 'i');
-        const members = await applyPopulateAutores(Member.find({
+        const members = await applyPopulateAuthors(Member.find({
             $or: [
                 { name: regex },
                 { instrument: regex }
@@ -69,7 +69,7 @@ router.get('/', verifyToken, async (req: Request, res: Response): Promise<void> 
         const skip = (page - 1) * limit;
 
         const [members, total] = await Promise.all([
-            applyPopulateAutores(Member.find()
+            applyPopulateAuthors(Member.find()
                 .sort({ name: 1 })
                 .skip(skip)
                 .limit(limit)
@@ -91,7 +91,7 @@ router.get('/', verifyToken, async (req: Request, res: Response): Promise<void> 
 // 🟣 GET ONE
 router.get('/:id', verifyToken, async (req: Request, res: Response): Promise<void> => {
     try {
-        const member = await applyPopulateAutorSingle(Member.findById(req.params.id)
+        const member = await applyPopulateSingleAuthor(Member.findById(req.params.id)
             .select('name instrument voice imageUrl'));
 
         if (!member) {

@@ -4,7 +4,7 @@ import verifyToken, { RequestWithUser } from '../middlewares/auth';
 import { v2 as cloudinary } from 'cloudinary';
 import { uploadGalleryImage } from '../middlewares/cloudinaryStorage';
 import { setUpdatedBy } from '../utils/setCreatedBy';
-import { applyPopulateAutorSingle } from '../utils/populateHelpers';
+import { applyPopulateSingleAuthor } from '../utils/populateHelpers';
 import { registerLog } from '../utils/logger';
 
 const router = express.Router();
@@ -45,7 +45,7 @@ router.get('/', verifyToken, async (_req: RequestWithUser, res: Response) => {
             await settingsDoc.save();
         }
 
-        const populated = await applyPopulateAutorSingle(Settings.findById(settingsDoc._id));
+        const populated = await applyPopulateSingleAuthor(Settings.findById(settingsDoc._id));
         res.json(populated);
     } catch (error: any) {
         console.error("Settings GET Error:", error);

@@ -3,7 +3,7 @@ import verifyToken, { RequestWithUser } from '../middlewares/auth';
 import Song from '../models/Song';
 import '../models/SongType'; // Ensure model is registered
 import { setUpdatedBy, setCreatedBy } from '../utils/setCreatedBy';
-import { applyPopulateAutores, applyPopulateAutorSingle } from '../utils/populateHelpers';
+import { applyPopulateAuthors, applyPopulateSingleAuthor } from '../utils/populateHelpers';
 import { registerLog } from '../utils/logger';
 import { uploadSongAudio } from '../middlewares/cloudinaryStorage';
 import { v2 as cloudinary } from 'cloudinary';
@@ -91,7 +91,7 @@ router.post('/',
 // 🟣 ADMIN ENDPOINT (All Songs)
 router.get('/', verifyToken, async (_req: Request, res: Response) => {
     try {
-        const songs = await applyPopulateAutores(
+        const songs = await applyPopulateAuthors(
             Song.find().populate('songTypeId', 'name order')
         );
         res.json(songs);
@@ -103,7 +103,7 @@ router.get('/', verifyToken, async (_req: Request, res: Response) => {
 // 🟣 GET ONE
 router.get('/:id', verifyToken, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-        const song = await applyPopulateAutorSingle(
+        const song = await applyPopulateSingleAuthor(
             Song.findById(req.params.id).populate('songTypeId', 'name order')
         );
         if (!song) {

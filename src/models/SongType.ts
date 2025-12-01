@@ -3,10 +3,14 @@ import { Schema, model, Document, Types } from 'mongoose';
 export interface ISongType extends Document {
     name: string;
     order: number;
-    // 🆕 Hierarchy Support
+
+    // Hierarchy Support
     parentId?: Types.ObjectId;
-    isParent: boolean;         
-    
+    isParent: boolean;
+
+    createdBy?: Types.ObjectId;
+    updatedBy?: Types.ObjectId;
+
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -14,12 +18,15 @@ export interface ISongType extends Document {
 const SongTypeSchema = new Schema<ISongType>({
     name: { type: String, required: true, unique: true, trim: true },
     order: { type: Number, default: 0 },
-    
-    // 🆕 Hierarchy Fields
+
+    // Hierarchy Fields
     parentId: { type: Schema.Types.ObjectId, ref: 'SongType', default: null },
-    isParent: { type: Boolean, default: false }
-}, { 
-    timestamps: true 
+    isParent: { type: Boolean, default: false },
+
+    createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    updatedBy: { type: Schema.Types.ObjectId, ref: 'User' }
+}, {
+    timestamps: true
 });
 
 SongTypeSchema.set('toJSON', {

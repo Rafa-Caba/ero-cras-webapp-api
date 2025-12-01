@@ -10,12 +10,16 @@ const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'secretoSuperUltraSeguro';
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'refreshUltraSeguro';
 
-// 🟣 REGISTER (Public - Mobile App)
+console.log({ JWT_SECRET, JWT_REFRESH_SECRET });
+
+const ACCESS_TOKEN_EXPIRY = '1d';
+const REFRESH_TOKEN_EXPIRY = '7d';
+
+// REGISTER (Public - Mobile App)
 router.post('/register', async (req: Request, res: Response): Promise<void> => {
     try {
-        // Destructure English fields directly
         const { name, username, email, password, instrument } = req.body;
-        
+
         if (!username || !email || !password) {
             res.status(400).json({ message: 'Missing required fields' });
             return;
@@ -38,24 +42,23 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
             email,
             password: hashedPassword,
             instrument: instrument || '',
-            role: 'VIEWER' // Default role
+            role: 'VIEWER'
         });
 
         await newUser.save();
-        
-        // Generate Tokens
+
         const accessToken = jwt.sign(
             { id: newUser._id, username: newUser.username, role: newUser.role },
             JWT_SECRET,
-            { expiresIn: '15m' }
+            { expiresIn: ACCESS_TOKEN_EXPIRY }
         );
 
         const refreshToken = jwt.sign(
             { id: newUser._id, username: newUser.username },
             JWT_REFRESH_SECRET,
-            { expiresIn: '7d' }
+            { expiresIn: REFRESH_TOKEN_EXPIRY }
         );
-        
+
         await RefreshToken.create({ token: refreshToken, userId: newUser._id });
 
         res.status(201).json({
@@ -70,11 +73,13 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     }
 });
 
-// 🟣 LOGIN
+// LOGIN
 router.post('/login', async (req: Request, res: Response): Promise<void> => {
-    // Mobile sends 'username' (can be email or username string)
-    const usernameOrEmail = req.body.username || req.body.usernameOrEmail; 
+    const usernameOrEmail = req.body.username || req.body.usernameOrEmail;
     const { password } = req.body;
+
+    console.log({ usernameOrEmail, password });
+    console.log({ JWT_SECRET, JWT_REFRESH_SECRET });
 
     try {
         const user = await User.findOne({
@@ -82,17 +87,16 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
                 { email: usernameOrEmail },
                 { username: usernameOrEmail }
             ]
-        }).populate('themeId'); // Populate English field 'themeId'
+        }).populate('themeId');
 
         if (!user) {
             res.status(401).json({ message: 'User not found' });
             return;
         }
 
-        // Password check (user.password is optional in interface, but required in DB schema)
         if (!user.password) {
-             res.status(500).json({ message: 'User data corrupted' });
-             return;
+            res.status(500).json({ message: 'User data corrupted' });
+            return;
         }
 
         const isValidPassword = await bcrypt.compare(password, user.password);
@@ -104,71 +108,61 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         const accessToken = jwt.sign(
             { id: user._id, username: user.username, role: user.role },
             JWT_SECRET,
-            { expiresIn: '15m' }
+            { expiresIn: ACCESS_TOKEN_EXPIRY }
         );
 
         const refreshToken = jwt.sign(
             { id: user._id, username: user.username },
             JWT_REFRESH_SECRET,
-            { expiresIn: '7d' }
+            { expiresIn: REFRESH_TOKEN_EXPIRY }
         );
 
-        // Clean up old tokens (optional) or just add new one
         await RefreshToken.create({ token: refreshToken, userId: user._id });
 
         user.lastAccess = new Date();
         await user.save();
 
-        // Standardized English Response
         res.json({
             message: 'Login successful',
-            accessToken, 
+            accessToken,
             refreshToken,
             role: user.role,
-            user: user.toJSON() 
+            user: user.toJSON()
         });
     } catch (error: any) {
         res.status(500).json({ message: error.message });
     }
 });
 
-// 🟣 REFRESH TOKEN
-router.post('/refresh', async (req: Request, res: Response): Promise<void> => {
+// REFRESH TOKEN
+router.post(['/refresh', '/refresh-token'], async (req: Request, res: Response): Promise<void> => {
     const refreshToken = req.body.token || req.body.refreshToken;
 
-    if(!refreshToken) {
+    if (!refreshToken) {
         res.status(403).json({ message: 'Refresh Token required' });
-        return;
-    }
-
-    const decoded = jwt.decode(refreshToken) as JwtPayload | null;
-    // Note: decoded.id is correct if you signed it with 'id' above
-    if (!decoded?.id) {
-        res.status(403).json({ message: 'Invalid Token' });
-        return;
-    }
-
-    const storedToken = await RefreshToken.findOne({
-        token: refreshToken,
-        userId: decoded.id
-    });
-
-    if (!storedToken) {
-        res.status(403).json({ message: 'Refresh token not found in DB' });
         return;
     }
 
     try {
         const userPayload = jwt.verify(refreshToken, JWT_REFRESH_SECRET) as JwtPayload;
 
-        // Fetch user to get current role (in case it changed)
+        const storedToken = await RefreshToken.findOne({
+            token: refreshToken,
+            userId: userPayload.id
+        });
+
+        if (!storedToken) {
+            res.status(403).json({ message: 'Refresh token invalid or revoked' });
+            return;
+        }
+
         const dbUser = await User.findById(userPayload.id);
         const currentRole = dbUser ? dbUser.role : 'VIEWER';
 
         const newAccessToken = jwt.sign(
             { id: userPayload.id, username: userPayload.username, role: currentRole },
             JWT_SECRET,
-            { expiresIn: '15m' }
+            { expiresIn: ACCESS_TOKEN_EXPIRY }
         );
 
         res.json({ accessToken: newAccessToken });
@@ -177,14 +171,14 @@ router.post('/refresh', async (req: Request, res: Response): Promise<void> => {
     }
 });
 
-// 🟣 LOGOUT
+// LOGOUT
 router.post('/logout', verifyToken, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
         const token = req.body.token || req.body.refreshToken;
-        if(token) {
+        if (token) {
             await RefreshToken.deleteOne({ token });
         }
-        
+
         res.json({ message: 'Logout successful' });
     } catch (error: any) {
         res.status(500).json({ message: error.message });
