@@ -45,7 +45,6 @@ router.get('/', verifyToken, async (_req: RequestWithUser, res: Response) => {
             await settingsDoc.save();
         }
 
-        // 🛠️ FIX: Ensure we query by ID correctly
         const populated = await applyPopulateAutorSingle(Settings.findById(settingsDoc._id));
         res.json(populated);
     } catch (error: any) {
@@ -55,59 +54,59 @@ router.get('/', verifyToken, async (_req: RequestWithUser, res: Response) => {
 });
 
 // Update
-router.put('/', 
-    verifyToken, 
+router.put('/',
+    verifyToken,
     uploadGalleryImage.single('file'),
-    setUpdatedBy, 
+    setUpdatedBy,
     async (req: RequestWithUser, res: Response): Promise<void> => {
-    try {
-        const body = parseBody(req);
-        
-        let settingsDoc = await Settings.findOne();
-        if (!settingsDoc) {
-            settingsDoc = new Settings();
-        }
+        try {
+            const body = parseBody(req);
 
-        if (body.webTitle) settingsDoc.webTitle = body.webTitle;
-        if (body.contactPhone) settingsDoc.contactPhone = body.contactPhone;
-        
-        if (body.homeLegends) {
-            settingsDoc.homeLegends = { ...settingsDoc.homeLegends, ...body.homeLegends };
-        }
-        if (body.socials) {
-            settingsDoc.socials = { ...settingsDoc.socials, ...body.socials };
-        }
-        if (body.history) {
-            settingsDoc.history = body.history;
-        }
-
-        if (req.file) {
-            if (settingsDoc.logoPublicId) {
-                await cloudinary.uploader.destroy(settingsDoc.logoPublicId);
+            let settingsDoc = await Settings.findOne();
+            if (!settingsDoc) {
+                settingsDoc = new Settings();
             }
-            settingsDoc.logoUrl = req.file.path;
-            settingsDoc.logoPublicId = req.file.filename;
+
+            if (body.webTitle) settingsDoc.webTitle = body.webTitle;
+            if (body.contactPhone) settingsDoc.contactPhone = body.contactPhone;
+
+            if (body.homeLegends) {
+                settingsDoc.homeLegends = { ...settingsDoc.homeLegends, ...body.homeLegends };
+            }
+            if (body.socials) {
+                settingsDoc.socials = { ...settingsDoc.socials, ...body.socials };
+            }
+            if (body.history) {
+                settingsDoc.history = body.history;
+            }
+
+            if (req.file) {
+                if (settingsDoc.logoPublicId) {
+                    await cloudinary.uploader.destroy(settingsDoc.logoPublicId);
+                }
+                settingsDoc.logoUrl = req.file.path;
+                settingsDoc.logoPublicId = req.file.filename;
+            }
+
+            settingsDoc.updatedBy = req.body.updatedBy;
+
+            await settingsDoc.save();
+
+            const populated = await Settings.findById(settingsDoc._id).populate('updatedBy', 'name username');
+
+            await registerLog({
+                req: req as any,
+                collection: 'Settings',
+                action: 'update',
+                referenceId: settingsDoc.id.toString(),
+                changes: { after: settingsDoc }
+            });
+
+            res.json(populated);
+        } catch (error: any) {
+            console.error('Error updating settings:', error);
+            res.status(500).json({ message: 'Error updating settings', error: error.message });
         }
-
-        settingsDoc.updatedBy = req.body.updatedBy;
-
-        await settingsDoc.save();
-        
-        const populated = await Settings.findById(settingsDoc._id).populate('updatedBy', 'name username');
-
-        await registerLog({
-            req: req as any,
-            collection: 'Settings',
-            action: 'update',
-            referenceId: settingsDoc.id.toString(),
-            changes: { after: settingsDoc }
-        });
-
-        res.json(populated);
-    } catch (error: any) {
-        console.error('Error updating settings:', error);
-        res.status(500).json({ message: 'Error updating settings', error: error.message });
-    }
-});
+    });
 
 export default router;

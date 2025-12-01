@@ -65,7 +65,7 @@ router.get('/search', verifyToken, async (req: Request, res: Response): Promise<
 router.get('/', verifyToken, async (req: Request, res: Response): Promise<void> => {
     try {
         const page = parseInt(req.query.page as string) || 1;
-        const limit = parseInt(req.query.limit as string) || 10; // Default limit 10
+        const limit = parseInt(req.query.limit as string) || 10;
         const skip = (page - 1) * limit;
 
         const [members, total] = await Promise.all([
@@ -106,101 +106,101 @@ router.get('/:id', verifyToken, async (req: Request, res: Response): Promise<voi
 });
 
 // 🟣 CREATE
-router.post('/', 
-    verifyToken, 
+router.post('/',
+    verifyToken,
     uploadMemberImage.single('file'), // Standard field 'file'
-    setCreatedBy, 
+    setCreatedBy,
     async (req: RequestWithUser, res: Response): Promise<void> => {
-    try {
-        const body = parseBody(req);
-        const { name, instrument, voice } = body;
+        try {
+            const body = parseBody(req);
+            const { name, instrument, voice } = body;
 
-        if (!name || !instrument) {
-            res.status(400).json({ message: 'Name and Instrument are required' });
-            return;
+            if (!name || !instrument) {
+                res.status(400).json({ message: 'Name and Instrument are required' });
+                return;
+            }
+
+            const newMember = new Member({
+                name,
+                instrument,
+                // Handle boolean string
+                voice: voice === 'true' || voice === true,
+                imageUrl: req.file?.path || '',
+                imagePublicId: req.file?.filename || '',
+                createdBy: req.body.createdBy
+            });
+
+            await newMember.save();
+
+            if (!newMember._id) return;
+
+            await registerLog({
+                req: req as any,
+                collection: 'Members',
+                action: 'create',
+                referenceId: newMember._id.toString(),
+                changes: { new: newMember }
+            });
+
+            res.status(200).json({
+                message: 'Member created successfully',
+                member: newMember
+            });
+        } catch (error: any) {
+            res.status(400).json({ message: error.message });
         }
-
-        const newMember = new Member({
-            name,
-            instrument,
-            // Handle boolean string
-            voice: voice === 'true' || voice === true,
-            imageUrl: req.file?.path || '',
-            imagePublicId: req.file?.filename || '',
-            createdBy: req.body.createdBy
-        });
-
-        await newMember.save();
-
-        if (!newMember._id) return;
-
-        await registerLog({
-            req: req as any,
-            collection: 'Members',
-            action: 'create',
-            referenceId: newMember._id.toString(),
-            changes: { new: newMember }
-        });
-
-        res.status(200).json({
-            message: 'Member created successfully',
-            member: newMember
-        });
-    } catch (error: any) {
-        res.status(400).json({ message: error.message });
-    }
-});
+    });
 
 // 🟣 UPDATE
-router.put('/:id', 
-    verifyToken, 
-    uploadMemberImage.single('file'), 
-    setUpdatedBy, 
+router.put('/:id',
+    verifyToken,
+    uploadMemberImage.single('file'),
+    setUpdatedBy,
     async (req: RequestWithUser, res: Response): Promise<void> => {
-    try {
-        const body = parseBody(req);
-        const { name, instrument, voice } = body;
-        
-        const member = await Member.findById(req.params.id);
+        try {
+            const body = parseBody(req);
+            const { name, instrument, voice } = body;
 
-        if (!member) {
-            res.status(404).json({ message: 'Member not found' });
-            return;
-        }
+            const member = await Member.findById(req.params.id);
 
-        // Handle Image Replacement
-        if (req.file) {
-            if (member.imagePublicId) {
-                await cloudinary.uploader.destroy(member.imagePublicId);
+            if (!member) {
+                res.status(404).json({ message: 'Member not found' });
+                return;
             }
-            member.imageUrl = req.file.path;
-            member.imagePublicId = req.file.filename;
+
+            // Handle Image Replacement
+            if (req.file) {
+                if (member.imagePublicId) {
+                    await cloudinary.uploader.destroy(member.imagePublicId);
+                }
+                member.imageUrl = req.file.path;
+                member.imagePublicId = req.file.filename;
+            }
+
+            // Update fields safely
+            if (name) member.name = name;
+            if (instrument) member.instrument = instrument;
+            if (voice !== undefined) {
+                member.voice = voice === 'true' || voice === true;
+            }
+
+            member.updatedBy = req.body.updatedBy;
+
+            const updatedMember = await member.save();
+
+            await registerLog({
+                req: req as any,
+                collection: 'Members',
+                action: 'update',
+                referenceId: updatedMember.id.toString(),
+                changes: { updated: updatedMember }
+            });
+
+            res.json(updatedMember);
+        } catch (error: any) {
+            res.status(400).json({ message: error.message });
         }
-
-        // Update fields safely
-        if (name) member.name = name;
-        if (instrument) member.instrument = instrument;
-        if (voice !== undefined) {
-            member.voice = voice === 'true' || voice === true;
-        }
-        
-        member.updatedBy = req.body.updatedBy;
-
-        const updatedMember = await member.save();
-
-        await registerLog({
-            req: req as any,
-            collection: 'Members',
-            action: 'update',
-            referenceId: updatedMember.id.toString(),
-            changes: { updated: updatedMember }
-        });
-
-        res.json(updatedMember);
-    } catch (error: any) {
-        res.status(400).json({ message: error.message });
-    }
-});
+    });
 
 // 🟣 DELETE
 router.delete('/:id', verifyToken, async (req: RequestWithUser, res: Response): Promise<void> => {

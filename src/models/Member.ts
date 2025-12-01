@@ -6,10 +6,10 @@ export interface IMember extends Document {
     voice: boolean;
     imageUrl?: string;
     imagePublicId?: string;
-    
+
     createdBy?: Types.ObjectId;
     updatedBy?: Types.ObjectId;
-    
+
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -42,7 +42,7 @@ const MemberSchema = new Schema<IMember>(
         createdBy: {
             type: Schema.Types.ObjectId,
             ref: 'User',
-            required: false, 
+            required: false,
         },
         updatedBy: {
             type: Schema.Types.ObjectId,
@@ -59,7 +59,6 @@ MemberSchema.set('toJSON', {
     transform: function (doc, ret) {
         ret.id = ret._id;
         delete ret._id;
-        // No other mapping needed; fields are already English
     }
 });
 

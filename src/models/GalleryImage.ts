@@ -12,6 +12,8 @@ export interface IGalleryImage extends Document {
     imageUs: boolean;
     imageLogo: boolean;
     imageGallery: boolean;
+    imageLeftMenu?: boolean;
+    imageRightMenu?: boolean
 
     createdBy?: Types.ObjectId;
     updatedBy?: Types.ObjectId;
@@ -31,6 +33,8 @@ const GalleryImageSchema = new Schema<IGalleryImage>(
         imageUs: { type: Boolean, default: false },
         imageLogo: { type: Boolean, default: false },
         imageGallery: { type: Boolean, default: false },
+        imageLeftMenu: { type: Boolean, default: false },
+        imageRightMenu: { type: Boolean, default: false },
 
         createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
         updatedBy: { type: Schema.Types.ObjectId, ref: 'User' }

@@ -5,10 +5,9 @@ export interface ISong extends Document {
     composer?: string;
     content: any; // TipTap
     audioUrl?: string;
-    
-    songTypeId?: Types.ObjectId; // Reference
-    // songTypeName: string; // We don't store this, we populate it
-    
+
+    songTypeId?: Types.ObjectId;
+
     createdBy?: Types.ObjectId;
     updatedBy?: Types.ObjectId;
 }
@@ -19,9 +18,9 @@ const SongSchema = new Schema<ISong>(
         composer: { type: String, default: '' },
         content: { type: Schema.Types.Mixed, required: true },
         audioUrl: { type: String, default: '' },
-        
+
         songTypeId: { type: Schema.Types.ObjectId, ref: 'SongType', default: null },
-        
+
         createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
         updatedBy: { type: Schema.Types.ObjectId, ref: 'User' }
     },
@@ -34,7 +33,7 @@ SongSchema.set('toJSON', {
     transform: function (doc, ret) {
         ret.id = ret._id;
         delete ret._id;
-        
+
         // Flatten relationship for Frontend convenience
         if (ret.songTypeId && typeof ret.songTypeId === 'object') {
             ret.songTypeName = ret.songTypeId.name;
