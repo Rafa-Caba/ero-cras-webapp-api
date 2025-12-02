@@ -45,6 +45,20 @@ router.get('/admin', verifyToken, async (req: Request, res: Response) => {
     }
 });
 
+// GET ONE
+router.get('/:id', verifyToken, async (req: Request, res: Response): Promise<void> => {
+    try {
+        const announcement = await Announcement.findById(req.params.id);
+        if (!announcement) {
+            res.status(404).json({ message: 'Announcement not found' });
+            return;
+        }
+        res.json(announcement);
+    } catch (error: any) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
 // Create
 router.post('/',
     verifyToken,

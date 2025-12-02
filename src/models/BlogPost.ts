@@ -1,37 +1,29 @@
 import { Schema, model, Document, Types } from 'mongoose';
 
-export interface IBlogComment {
-    author: string; // Username string for simplicity or User ref
-    text: any; // TipTap JSON
-    date: Date;
-}
-
 export interface IBlogPost extends Document {
     title: string;
-    content: any; // TipTap JSON
+    content: any;
     imageUrl?: string;
     imagePublicId?: string;
     isPublic: boolean;
-    
-    author: string; // Storing username for display
-    
-    tags: string[];
+
+    author: Types.ObjectId;
+
+    // Likes & Comments
     likes: number;
-    likesUsers: string[]; // List of usernames or IDs
-    comments: IBlogComment[];
-    
+    likesUsers: Types.ObjectId[];
+    comments: Array<{
+        author: string;
+        text: any;
+        date: Date;
+    }>;
+
     createdBy?: Types.ObjectId;
     updatedBy?: Types.ObjectId;
-}
 
-const BlogCommentSchema = new Schema<IBlogComment>(
-    {
-        author: { type: String, required: true },
-        text: { type: Schema.Types.Mixed, required: true },
-        date: { type: Date, default: Date.now }
-    },
-    { _id: false }
-);
+    createdAt: Date;
+    updatedAt: Date;
+}
 
 const BlogPostSchema = new Schema<IBlogPost>(
     {
@@ -40,14 +32,18 @@ const BlogPostSchema = new Schema<IBlogPost>(
         imageUrl: { type: String, default: '' },
         imagePublicId: { type: String, default: '' },
         isPublic: { type: Boolean, default: false },
-        
-        author: { type: String, required: true }, // Username string
-        
-        tags: { type: [String], default: [] },
+
+        author: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+
         likes: { type: Number, default: 0 },
-        likesUsers: { type: [String], default: [] },
-        comments: { type: [BlogCommentSchema], default: [] },
-        
+        likesUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+
+        comments: [{
+            author: String,
+            text: Schema.Types.Mixed,
+            date: { type: Date, default: Date.now }
+        }],
+
         createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
         updatedBy: { type: Schema.Types.ObjectId, ref: 'User' }
     },
@@ -60,19 +56,6 @@ BlogPostSchema.set('toJSON', {
     transform: function (doc, ret) {
         ret.id = ret._id;
         delete ret._id;
-        
-        // Manual population map for Author object if needed by UI
-        if (ret.createdBy && typeof ret.createdBy === 'object') {
-             ret.author = {
-                id: ret.createdBy._id,
-                name: ret.createdBy.name,
-                username: ret.createdBy.username,
-                imageUrl: ret.createdBy.imageUrl
-             };
-        } else {
-             // Fallback if not populated
-             ret.author = { name: ret.author, username: ret.author };
-        }
     }
 });
 
