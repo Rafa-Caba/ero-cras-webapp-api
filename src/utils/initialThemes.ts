@@ -50,7 +50,7 @@ export const createDefaultThemes = async () => {
         const existing = await Theme.find({ name: { $in: initialThemes.map(t => t.name) } });
 
         if (existing.length === initialThemes.length) {
-            console.log('🟡 All default themes exist.');
+            // console.log('🟡 All default themes exist.');
             return;
         }
 
@@ -58,7 +58,7 @@ export const createDefaultThemes = async () => {
             const exists = existing.find(e => e.name === theme.name);
             if (!exists) {
                 await Theme.create(theme);
-                console.log(`✅ Theme "${theme.name}" created.`);
+                // console.log(`✅ Theme "${theme.name}" created.`);
             }
         }
     } catch (error) {

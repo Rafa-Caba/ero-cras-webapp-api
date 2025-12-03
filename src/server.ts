@@ -27,7 +27,7 @@ import { createDefaultThemes } from './utils/initialThemes';
 export const app: Application = express();
 
 // 1. CONFIGURATION
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 10000;
 const MONGO_URI = process.env.MONGO_URI || '';
 
 if (!MONGO_URI) {
@@ -89,7 +89,7 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 // 5. SERVER STARTUP
 mongoose.connect(MONGO_URI)
     .then(async () => {
-        console.log('✅ MongoDB Connected');
+        // console.log('✅ MongoDB Connected');
         await ensureSettingsExists();
         await createDefaultThemes();
 
@@ -110,7 +110,7 @@ mongoose.connect(MONGO_URI)
         configuringSockets(io);
 
         httpServer.listen(PORT, () => {
-            console.log(`🚀 Server running on port ${PORT}`);
+            // console.log(`🚀 Server running on port ${PORT}`);
         });
     })
     .catch(err => {

@@ -10,8 +10,6 @@ const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'secretoSuperUltraSeguro';
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'refreshUltraSeguro';
 
-console.log({ JWT_SECRET, JWT_REFRESH_SECRET });
-
 const ACCESS_TOKEN_EXPIRY = '1d';
 const REFRESH_TOKEN_EXPIRY = '7d';
 

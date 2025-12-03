@@ -90,9 +90,13 @@ router.post('/',
                 return;
             }
 
-            const existing = await SongType.findOne({ name });
+            const existing = await SongType.findOne({
+                name: name,
+                parentId: parentId || null
+            });
+
             if (existing) {
-                res.status(409).json({ message: 'A song type with this name already exists.' });
+                res.status(409).json({ message: 'A song type with this name already exists in this folder.' });
                 return;
             }
 
@@ -132,14 +136,18 @@ router.put('/:id',
 
             const name = req.body.name || req.body.nombre;
             const order = req.body.order || req.body.orden;
-            const parentId = req.body.parentId;
+
+            let parentId = req.body.parentId;
+            if (parentId === '' || parentId === 'undefined') parentId = null;
             const isParent = req.body.isParent;
 
-            const existing = await SongType.findOne({ name });
+            const existing = await SongType.findOne({
+                name: name,
+                parentId: parentId || null
+            });
 
-            // Check for duplicates (but allow if it's the same ID)
             if (existing && existing.id.toString() !== id) {
-                res.status(409).json({ message: 'Another song type with this name already exists.' });
+                res.status(409).json({ message: 'A song type with this name already exists in this folder.' });
                 return;
             }
 
