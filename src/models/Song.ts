@@ -3,23 +3,30 @@ import { Schema, model, Document, Types } from 'mongoose';
 export interface ISong extends Document {
     title: string;
     composer?: string;
-    content: any; // TipTap
+    content: any;
     audioUrl?: string;
 
-    songTypeId?: Types.ObjectId;
+    songTypeId?: Types.ObjectId | null;
+    songTypeName?: string;
 
     createdBy?: Types.ObjectId;
     updatedBy?: Types.ObjectId;
+    createdAt?: Date;
+    updatedAt?: Date;
 }
 
 const SongSchema = new Schema<ISong>(
     {
-        title: { type: String, required: true },
-        composer: { type: String, default: '' },
+        title: { type: String, required: true, trim: true },
+        composer: { type: String, default: '', trim: true },
         content: { type: Schema.Types.Mixed, required: true },
         audioUrl: { type: String, default: '' },
 
-        songTypeId: { type: Schema.Types.ObjectId, ref: 'SongType', default: null },
+        songTypeId: {
+            type: Schema.Types.ObjectId,
+            ref: 'SongType',
+            default: null
+        },
 
         createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
         updatedBy: { type: Schema.Types.ObjectId, ref: 'User' }
@@ -30,15 +37,10 @@ const SongSchema = new Schema<ISong>(
 SongSchema.set('toJSON', {
     virtuals: true,
     versionKey: false,
-    transform: function (doc, ret) {
-        ret.id = ret._id;
+    transform: (_doc, ret: any) => {
+        ret.id = ret._id.toString();
         delete ret._id;
-
-        // Flatten relationship for Frontend convenience
-        if (ret.songTypeId && typeof ret.songTypeId === 'object') {
-            ret.songTypeName = ret.songTypeId.name;
-            ret.songTypeId = ret.songTypeId._id;
-        }
+        return ret;
     }
 });
 
