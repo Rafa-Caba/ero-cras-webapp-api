@@ -26,7 +26,6 @@ import { createDefaultThemes } from './utils/initialThemes';
 
 export const app: Application = express();
 
-// 1. CONFIGURATION
 const PORT = process.env.PORT || 10000;
 const MONGO_URI = process.env.MONGO_URI || '';
 
@@ -35,7 +34,6 @@ if (!MONGO_URI) {
     process.exit(1);
 }
 
-// 2. MIDDLEWARES & CORS
 const whitelist = [
     'http://localhost:5173', // Web Dev
     'http://localhost:8081', // Mobile Dev
@@ -43,12 +41,20 @@ const whitelist = [
     'https://ero-cras-webapp-api-production.up.railway.app' // Self / API
 ];
 
+const isOriginAllowed = (origin?: string | null): boolean => {
+    if (!origin) return true;
+
+    return whitelist.some((base) => {
+        return origin === base || origin.startsWith(base);
+    });
+};
+
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin || whitelist.includes(origin)) {
+        if (isOriginAllowed(origin)) {
             callback(null, true);
         } else {
-            console.log("Blocked by CORS (HTTP):", origin);
+            console.log('Blocked by CORS (HTTP):', origin);
             callback(new Error('Not allowed by CORS'));
         }
     },
@@ -58,7 +64,6 @@ app.use(cors({
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
-// 3. ROUTES
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/songs', songRoutes);
@@ -72,7 +77,6 @@ app.use('/api/logs', logRoutes);
 app.use('/api/themes', themeRoutes);
 app.use('/api/chat', chatRoutes);
 
-// 4. ERROR HANDLING
 app.use((req: Request, res: Response) => {
     res.status(404).json({
         message: 'Route not found',
@@ -86,7 +90,6 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     res.status(500).json({ message: 'Internal Server Error' });
 });
 
-// 5. SERVER & SOCKET.IO STARTUP
 mongoose.connect(MONGO_URI)
     .then(async () => {
         await ensureSettingsExists();
@@ -95,10 +98,9 @@ mongoose.connect(MONGO_URI)
         const httpServer = http.createServer(app);
 
         const io = new SocketIOServer(httpServer, {
-            path: '/socket.io',
             cors: {
                 origin: (origin, callback) => {
-                    if (!origin || whitelist.includes(origin)) {
+                    if (isOriginAllowed(origin)) {
                         callback(null, true);
                     } else {
                         console.log('Blocked by CORS (Socket.IO):', origin);
@@ -108,14 +110,6 @@ mongoose.connect(MONGO_URI)
                 methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
                 credentials: true
             }
-        });
-
-        io.engine.on('connection_error', (err) => {
-            console.log(
-                '⚠️ Engine connection_error:',
-                err.code,
-                err.message,
-            );
         });
 
         app.set('io', io);
