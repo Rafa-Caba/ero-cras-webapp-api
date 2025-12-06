@@ -51,14 +51,38 @@ ChatMessageSchema.set('toJSON', {
         ret.id = ret._id;
         delete ret._id;
 
-        // Convenience aliases
         if (ret.type === 'IMAGE' || ret.type === 'VIDEO') {
             ret.imageUrl = ret.fileUrl;
         } else if (ret.type === 'AUDIO') {
             ret.audioUrl = ret.fileUrl;
         }
+
+        if (ret.replyTo && typeof ret.replyTo === 'object') {
+            const reply = ret.replyTo;
+            const author = reply.author || {};
+            const username = author.username || author.name || 'Usuario';
+
+            let textPreview = '';
+            if (typeof reply.content === 'string') {
+                textPreview = reply.content;
+            } else if (reply.content && typeof reply.content === 'object') {
+                textPreview =
+                    reply.content.text ||
+                    (Array.isArray(reply.content.content) && reply.content.content[0]?.text) ||
+                    '[mensaje]';
+            } else {
+                textPreview = '[mensaje]';
+            }
+
+            ret.replyTo = {
+                id: reply._id,
+                username,
+                textPreview
+            };
+        }
     }
 });
+
 
 const ChatMessage = model<IChatMessage>('ChatMessage', ChatMessageSchema);
 export default ChatMessage;

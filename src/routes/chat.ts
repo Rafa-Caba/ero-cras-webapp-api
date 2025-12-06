@@ -1,20 +1,21 @@
 import express, { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import ChatMessage from '../models/ChatMessage';
 import verifyToken, { RequestWithUser } from '../middlewares/auth';
 import { setCreatedBy } from '../utils/setCreatedBy';
-import { 
-    streamUpload, 
-    uploadChatFile, 
-    uploadChatImage, 
-    uploadChatMedia 
+import {
+    streamUpload,
+    uploadChatFile,
+    uploadChatImage,
+    uploadChatMedia
 } from '../middlewares/cloudinaryStorage';
-import { VALID_MESSAGE_TYPES } from '../utils/constants'; 
-import { isValidMediaExtension } from '../utils/validateMimeMedia'; 
+import { VALID_MESSAGE_TYPES } from '../utils/constants';
+import { isValidMediaExtension } from '../utils/validateMimeMedia';
 import { notifyCommunity } from '../utils/notificationHelper';
 
 const router = express.Router();
 
-// 🟣 GET HISTORY
+// GET HISTORY
 router.get(['/', '/history'], verifyToken, async (req: Request, res: Response): Promise<void> => {
     try {
         const { limit = 50, before } = req.query;
@@ -22,25 +23,29 @@ router.get(['/', '/history'], verifyToken, async (req: Request, res: Response): 
         const query: any = {};
         if (before) {
             query.createdAt = { $lt: new Date(before as string) };
-        }        
+        }
 
         const messages = await ChatMessage.find(query)
             .sort({ createdAt: -1 })
             .limit(Number(limit))
-            .populate('author', 'name username imageUrl') 
-            .populate('reactions.user', 'username'); // This now works with the updated model!
+            .populate('author', 'name username imageUrl')
+            .populate('reactions.user', 'username')
+            .populate({
+                path: 'replyTo',
+                populate: { path: 'author', select: 'name username imageUrl' }
+            });
 
         res.json(messages.reverse());
     } catch (error: any) {
-        console.error("History Error:", error);
+        console.error('History Error:', error);
         res.status(500).json({ message: 'Error retrieving messages', error: error.message });
     }
 });
 
-// 🟣 CREATE MESSAGE (Text)
+// CREATE MESSAGE (Text)
 router.post('/', verifyToken, setCreatedBy, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
-        const { content, type, fileUrl, filename } = req.body;
+        const { content, type, fileUrl, filename, replyToId } = req.body;
         const author = req.body.author || req.body.createdBy;
 
         if (VALID_MESSAGE_TYPES && !VALID_MESSAGE_TYPES.includes(type)) {
@@ -49,12 +54,23 @@ router.post('/', verifyToken, setCreatedBy, async (req: RequestWithUser, res: Re
         }
 
         const message = new ChatMessage({
-            author, content, type, fileUrl, filename,
-            createdBy: req.body.createdBy
+            author,
+            content,
+            type,
+            fileUrl,
+            filename,
+            replyTo: replyToId || null,
+            createdBy: req.body.createdBy,
         });
 
         await message.save();
-        await message.populate('author', 'name username imageUrl');
+        await message.populate([
+            { path: 'author', select: 'name username imageUrl' },
+            {
+                path: 'replyTo',
+                populate: { path: 'author', select: 'name username imageUrl' },
+            },
+        ]);
 
         if (req.app.get('io')) {
             req.app.get('io').emit('new-message', message.toJSON());
@@ -68,13 +84,16 @@ router.post('/', verifyToken, setCreatedBy, async (req: RequestWithUser, res: Re
     }
 });
 
-// 🟣 UPLOAD IMAGE
+// UPLOAD IMAGE
 router.post('/upload-image', verifyToken, uploadChatImage.single('file'), setCreatedBy, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
-        const { content } = req.body;
+        const { content, replyToId } = req.body;
         const author = req.body.author || req.body.createdBy;
 
-        if (!req.file) { res.status(400).json({ message: 'No image received' }); return; }
+        if (!req.file) {
+            res.status(400).json({ message: 'No image received' });
+            return;
+        }
 
         const message = new ChatMessage({
             author,
@@ -82,11 +101,18 @@ router.post('/upload-image', verifyToken, uploadChatImage.single('file'), setCre
             type: 'IMAGE',
             fileUrl: req.file.path,
             filename: req.file.filename,
+            replyTo: replyToId || null,
             createdBy: req.body.createdBy,
         });
 
         await message.save();
-        await message.populate('author', 'name username imageUrl');
+        await message.populate([
+            { path: 'author', select: 'name username imageUrl' },
+            {
+                path: 'replyTo',
+                populate: { path: 'author', select: 'name username imageUrl' },
+            },
+        ]);
 
         if (req.app.get('io')) req.app.get('io').emit('new-message', message.toJSON());
 
@@ -98,7 +124,7 @@ router.post('/upload-image', verifyToken, uploadChatImage.single('file'), setCre
     }
 });
 
-// 🟣 UPLOAD FILE
+// UPLOAD FILE
 router.post('/upload-file', verifyToken, uploadChatFile.single('file'), setCreatedBy, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
         const author = req.body.author || req.body.createdBy;
@@ -114,7 +140,13 @@ router.post('/upload-file', verifyToken, uploadChatFile.single('file'), setCreat
         });
 
         await message.save();
-        await message.populate('author', 'name username imageUrl');
+        await message.populate([
+            { path: 'author', select: 'name username imageUrl' },
+            {
+                path: 'replyTo',
+                populate: { path: 'author', select: 'name username imageUrl' },
+            },
+        ]);
 
         if (req.app.get('io')) req.app.get('io').emit('new-message', message.toJSON());
 
@@ -126,7 +158,7 @@ router.post('/upload-file', verifyToken, uploadChatFile.single('file'), setCreat
     }
 });
 
-// 🟣 UPLOAD MEDIA
+// UPLOAD MEDIA
 router.post('/upload-media', verifyToken, uploadChatMedia.single('file'), setCreatedBy, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
         const author = req.body.author || req.body.createdBy;
@@ -145,7 +177,13 @@ router.post('/upload-media', verifyToken, uploadChatMedia.single('file'), setCre
         });
 
         await message.save();
-        await message.populate('author', 'name username imageUrl');
+        await message.populate([
+            { path: 'author', select: 'name username imageUrl' },
+            {
+                path: 'replyTo',
+                populate: { path: 'author', select: 'name username imageUrl' },
+            },
+        ]);
 
         if (req.app.get('io')) req.app.get('io').emit('new-message', message.toJSON());
 
@@ -157,39 +195,57 @@ router.post('/upload-media', verifyToken, uploadChatMedia.single('file'), setCre
     }
 });
 
-// 🟣 PATCH REACTION
+// PATCH REACTION
 router.patch('/:id/reaction', verifyToken, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
         const messageId = req.params.id;
         const { emoji } = req.body;
         const userId = req.user?.id;
 
-        const message = await ChatMessage.findById(messageId);
-        if (!message) { res.status(404).json({ message: 'Message not found' }); return; }
-        if (!userId) return;
+        if (!userId) {
+            res.status(401).json({ message: 'User not authenticated' });
+            return;
+        }
 
-        // Toggle Logic
-        const existingIndex = message.reactions.findIndex(r => r.user.toString() === userId);
+        const message = await ChatMessage.findById(messageId);
+        if (!message) {
+            res.status(404).json({ message: 'Message not found' });
+            return;
+        }
+
+        // 🔁 Toggle logic
+        const existingIndex = message.reactions.findIndex(
+            r => r.user.toString() === userId
+        );
 
         if (existingIndex > -1) {
             if (message.reactions[existingIndex].emoji === emoji) {
-                // Remove if same emoji clicked
                 message.reactions.splice(existingIndex, 1);
             } else {
-                // Update if different
                 message.reactions[existingIndex].emoji = emoji;
             }
         } else {
-            // Add new
             // @ts-ignore - Mongoose Types handling
             message.reactions.push({ user: userId, emoji });
         }
 
         await message.save();
-        await message.populate('author', 'name username imageUrl');
-        await message.populate('reactions.user', 'username');
 
-        if (req.app.get('io')) req.app.get('io').emit('message-updated', message.toJSON());
+        await message.populate([
+            { path: 'author', select: 'name username imageUrl' },
+            {
+                path: 'replyTo',
+                populate: { path: 'author', select: 'name username imageUrl' },
+            },
+            {
+                path: 'reactions.user',
+                select: 'username',
+            },
+        ]);
+
+        if (req.app.get('io')) {
+            req.app.get('io').emit('message-updated', message.toJSON());
+        }
 
         res.json({ message });
     } catch (error: any) {

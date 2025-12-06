@@ -37,6 +37,7 @@ if (!MONGO_URI) {
 const whitelist = [
     'http://localhost:5173', // Web Dev
     'http://localhost:8081', // Mobile Dev
+    'http://10.0.2.2:10000',
     'https://ero-cras-webapp.vercel.app', // Web Prod
     'https://ero-cras-webapp-api-production.up.railway.app' // Self / API
 ];
