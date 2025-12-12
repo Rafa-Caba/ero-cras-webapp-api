@@ -1,10 +1,13 @@
 import express, { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
-import { v2 as cloudinary } from 'cloudinary'; 
-import { uploadUserImage } from '../middlewares/cloudinaryStorage'; 
+import { v2 as cloudinary } from 'cloudinary';
+import { uploadUserImage } from '../middlewares/cloudinaryStorage';
 import verifyToken, { RequestWithUser } from '../middlewares/auth';
 import User from '../models/User';
+import Choir from '../models/Choir';
 import { registerLog } from '../utils/logger';
+import { setCreatedBy } from '../utils/setCreatedBy';
+import { normalizeUserWithChoir } from '../utils/normalizeUser';
 
 const router = express.Router();
 
@@ -17,304 +20,479 @@ const parseBody = (req: Request) => {
         try {
             body = JSON.parse(req.body.data);
         } catch (e) {
-            console.error("Error parsing JSON from mobile:", e);
+            console.error('Error parsing JSON from mobile:', e);
         }
     }
     return body;
 };
 
-// 🟣 GET /me (Profile)
-router.get('/me', verifyToken, async (req: RequestWithUser, res: Response): Promise<void> => {
-    try {
-        const userId = req.user?.id;
-        
-        // Populate themeId (reference to Theme model)
-        // Using 'themeId' field from our English User model
-        const user = await User.findById(userId).populate('themeId');
-        
-        if (!user) {
-            res.status(404).json({ message: 'User not found' });
-            return;
-        }
-        res.json(user);
-    } catch (error: any) {
-        res.status(500).json({ message: error.message });
-    }
-});
-
-// 🟣 PUT /me/push-token
-router.put('/me/push-token', verifyToken, async (req: RequestWithUser, res: Response): Promise<void> => {
-    try {
-        const userId = req.user?.id;
-        const { token } = req.body; 
-        
-        await User.findByIdAndUpdate(userId, { $set: { pushToken: token } });
-        
-        res.json({ success: true });
-    } catch (error: any) {
-        res.status(500).json({ message: error.message });
-    }
-});
-
-// 🟣 PUT /me/theme (Theme Switcher)
-router.put('/me/theme', verifyToken, async (req: RequestWithUser, res: Response): Promise<void> => {
-    try {
-        const userId = req.user?.id;
-        const { themeId } = req.body; 
-
-        const user = await User.findByIdAndUpdate(
-            userId, 
-            { themeId: themeId },
-            { new: true }
-        ).populate('themeId');
-
-        res.json(user);
-    } catch (error: any) {
-        res.status(500).json({ message: error.message });
-    }
-});
-
-// 🟣 PUT /me (Update Profile - Hybrid)
-router.put('/me', 
-    verifyToken, 
-    uploadUserImage.single('file'), // Standard field 'file'
+// GET /me (Profile)
+router.get(
+    '/me',
+    verifyToken,
     async (req: RequestWithUser, res: Response): Promise<void> => {
-    try {
-        const userId = req.user?.id;
-        const body = parseBody(req); 
-        
-        const user = await User.findById(userId);
-        if (!user) {
-            res.status(404).json({ message: 'User not found' });
-            return;
-        }
+        try {
+            const userId = req.user?.id;
 
-        // 1. Handle Image Upload
-        if (req.file) {
-            if (user.imagePublicId) {
-                await cloudinary.uploader.destroy(user.imagePublicId);
+            const user = await User.findById(userId)
+                .populate('themeId')
+                .populate('choirId');
+
+            if (!user) {
+                res.status(404).json({ message: 'User not found' });
+                return;
             }
-            user.imageUrl = req.file.path;
-            user.imagePublicId = req.file.filename;
-        }
 
-        // 2. Update Fields (Strict English keys)
-        if (body.name) user.name = body.name;
-        if (body.username) user.username = body.username.toLowerCase();
-        if (body.email) user.email = body.email;
-        
-        if (body.instrument) user.instrument = body.instrument;
-        if (body.bio) user.bio = body.bio;
-        
-        // Handle Boolean
-        if (body.voice !== undefined) {
-            user.voice = body.voice === 'true' || body.voice === true;
-        }
+            const normalizedUser = normalizeUserWithChoir(user);
 
-        // 3. Handle Password
-        if (body.password) {
-            user.password = await bcrypt.hash(body.password, 10);
+            res.json(normalizedUser);
+        } catch (error: any) {
+            res.status(500).json({ message: error.message });
         }
-
-        await user.save();
-        await user.populate('themeId');
-        
-        res.json(user);
-    } catch (error: any) {
-        console.error("Update Profile Error:", error);
-        res.status(400).json({ message: error.message });
     }
-});
+);
 
+// PUT /me/push-token
+router.put(
+    '/me/push-token',
+    verifyToken,
+    async (req: RequestWithUser, res: Response): Promise<void> => {
+        try {
+            const userId = req.user?.id;
+            const { token } = req.body;
+
+            await User.findByIdAndUpdate(userId, { $set: { pushToken: token } });
+
+            res.json({ success: true });
+        } catch (error: any) {
+            res.status(500).json({ message: error.message });
+        }
+    }
+);
+
+// PUT /me/theme (Theme Switcher)
+router.put(
+    '/me/theme',
+    verifyToken,
+    async (req: RequestWithUser, res: Response): Promise<void> => {
+        try {
+            const userId = req.user?.id;
+            const { themeId } = req.body;
+
+            const user = await User.findByIdAndUpdate(
+                userId,
+                { themeId: themeId },
+                { new: true }
+            ).populate('themeId');
+
+            if (!user) {
+                res.status(404).json({ message: 'User not found' });
+                return;
+            }
+
+            res.json(user.toJSON());
+        } catch (error: any) {
+            res.status(500).json({ message: error.message });
+        }
+    }
+);
+
+// PUT /me (Update Profile - Hybrid)
+router.put(
+    '/me',
+    verifyToken,
+    uploadUserImage.single('file'),
+    async (req: RequestWithUser, res: Response): Promise<void> => {
+        try {
+            const userId = req.user?.id;
+            const body = parseBody(req);
+
+            const user = await User.findById(userId);
+            if (!user) {
+                res.status(404).json({ message: 'User not found' });
+                return;
+            }
+
+            // 1. Handle Image Upload
+            if (req.file) {
+                if (user.imagePublicId) {
+                    await cloudinary.uploader.destroy(user.imagePublicId);
+                }
+                user.imageUrl = req.file.path;
+                user.imagePublicId = req.file.filename;
+            }
+
+            // 2. Update Fields
+            if (body.name) user.name = body.name;
+            if (body.username) user.username = body.username.toLowerCase();
+            if (body.email) user.email = body.email;
+
+            // 🎵 New instrument fields
+            if (body.instrumentId !== undefined) {
+                user.instrumentId = body.instrumentId || null;
+            }
+            if (body.instrumentLabel) {
+                user.instrumentLabel = body.instrumentLabel;
+            } else if (body.instrument) {
+                // Backward compatibility
+                user.instrumentLabel = body.instrument;
+            }
+
+            if (body.bio) user.bio = body.bio;
+
+            if (body.voice !== undefined) {
+                user.voice = body.voice === 'true' || body.voice === true;
+            }
+
+            // 3. Handle Password
+            if (body.password) {
+                user.password = await bcrypt.hash(body.password, 10);
+            }
+
+            const savedUser = await user.save();
+
+            await savedUser.populate('themeId');
+            await savedUser.populate('choirId');
+
+            const normalizedUser = normalizeUserWithChoir(savedUser);
+
+            res.json(normalizedUser);
+        } catch (error: any) {
+            console.error('Update Profile Error:', error);
+            res.status(400).json({ message: error.message });
+        }
+    }
+);
 // --- ADMIN ROUTES BELOW ---
 
 // GET /search
-router.get('/search', verifyToken, async (req: Request, res: Response): Promise<void> => {
-    const query = req.query.q?.toString().trim();
-    if (!query) {
-        res.status(400).json({ message: 'Query is empty' });
-        return;
-    }
+router.get(
+    '/search',
+    verifyToken,
+    async (req: Request, res: Response): Promise<void> => {
+        const query = req.query.q?.toString().trim();
+        if (!query) {
+            res.status(400).json({ message: 'Query is empty' });
+            return;
+        }
 
-    try {
-        const regex = new RegExp(query, 'i');
-        const users = await User.find({
-            $or: [
-                { name: regex },
-                { email: regex },
-                { username: regex }
-            ]
-        }); 
+        try {
+            const regex = new RegExp(query, 'i');
+            const users = await User.find({
+                $or: [{ name: regex }, { email: regex }, { username: regex }]
+            });
 
-        res.json(users);
-    } catch (error) {
-        res.status(500).json({ message: 'Search error' });
+            res.json(users.map((u) => u.toJSON()));
+        } catch (error) {
+            res.status(500).json({ message: 'Search error' });
+        }
     }
-});
+);
 
-// 🟣 GET DIRECTORY (Public/Protected - Minimal Info for Chat)
-router.get('/directory', verifyToken, async (req: Request, res: Response): Promise<void> => {
-    try {
-        // Fetch only necessary fields
-        const users = await User.find()
-            .select('name username imageUrl role _id')
-            .sort({ name: 1 });
-            
-        res.json(users);
-    } catch (error) {
-        res.status(500).json({ message: 'Error retrieving directory' });
+// GET DIRECTORY
+router.get(
+    '/directory',
+    verifyToken,
+    async (_req: Request, res: Response): Promise<void> => {
+        try {
+            const users = await User.find()
+                .select('name username imageUrl role _id')
+                .sort({ name: 1 });
+
+            res.json(users.map((u) => u.toJSON()));
+        } catch (error) {
+            res.status(500).json({ message: 'Error retrieving directory' });
+        }
     }
-});
+);
 
 // GET / (Paginated List)
-router.get('/', verifyToken, async (req: Request, res: Response): Promise<void> => {
-    try {
-        const page = parseInt(req.query.page as string) || 1;
-        const limit = parseInt(req.query.limit as string) || 10;
-        const skip = (page - 1) * limit;
+router.get(
+    '/',
+    verifyToken,
+    async (req: Request, res: Response): Promise<void> => {
+        try {
+            const page = parseInt(req.query.page as string) || 1;
+            const limit = parseInt(req.query.limit as string) || 10;
+            const skip = (page - 1) * limit;
 
-        const [users, total] = await Promise.all([
-            User.find()
-                .sort({ name: 1 })
-                .skip(skip)
-                .limit(limit),
-            User.countDocuments()
-        ]);
+            const [users, total] = await Promise.all([
+                User.find()
+                    .sort({ name: 1 })
+                    .skip(skip)
+                    .limit(limit),
+                User.countDocuments()
+            ]);
 
-        // Return standardized English response
-        res.json({
-            users,
-            currentPage: page,
-            totalPages: Math.ceil(total / limit),
-            totalUsers: total
-        });
-    } catch (error) {
-        res.status(500).json({ message: 'Error retrieving users' });
+            res.json({
+                users: users.map((u) => u.toJSON()),
+                currentPage: page,
+                totalPages: Math.ceil(total / limit),
+                totalUsers: total
+            });
+        } catch (error) {
+            res.status(500).json({ message: 'Error retrieving users' });
+        }
     }
-});
+);
 
 // GET /:id (Admin View)
-router.get('/:id', verifyToken, async (req: Request, res: Response): Promise<void> => {
-    try {
-        const user = await User.findById(req.params.id).select('-password'); 
-        if (!user) {
-            res.status(404).json({ message: 'User not found' });
-            return;
+router.get(
+    '/:id',
+    verifyToken,
+    async (req: Request, res: Response): Promise<void> => {
+        try {
+            const user = await User.findById(req.params.id).select('-password');
+            if (!user) {
+                res.status(404).json({ message: 'User not found' });
+                return;
+            }
+            res.json(user.toJSON());
+        } catch (error: any) {
+            res.status(500).json({ message: error.message });
         }
-        res.json(user);
-    } catch (error: any) {
-        res.status(500).json({ message: error.message });
     }
-});
+);
 
-// 🟣 CREATE (Admin)
-router.post('/', uploadUserImage.single('file'), async (req: Request, res: Response): Promise<void> => {
-    try {
-        const body = parseBody(req);
-        const { name, username, email, password, role, instrument, voice, bio } = body;
+// CREATE (Admin)
+router.post(
+    '/',
+    verifyToken,
+    uploadUserImage.single('file'),
+    setCreatedBy,
+    async (req: RequestWithUser, res: Response): Promise<void> => {
+        try {
+            const currentUser = req.user;
+            if (!currentUser) {
+                res.status(401).json({ message: 'No autenticado' });
+                return;
+            }
 
-        const exists = await User.findOne({
-            $or: [{ username: username.toLowerCase() }, { email }]
-        });
+            if (!['ADMIN', 'SUPER_ADMIN'].includes(currentUser.role)) {
+                res.status(403).json({ message: 'No tienes permisos para crear usuarios' });
+                return;
+            }
 
-        if (exists) {
-            res.status(409).json({ message: 'User or email already exists' });
-            return;
+            const body = parseBody(req);
+            const {
+                name,
+                username,
+                email,
+                password,
+                role,
+                instrument,
+                instrumentId,
+                instrumentLabel,
+                voice,
+                bio,
+                choirId: bodyChoirId
+            } = body;
+
+            if (!name || !username || !email || !password) {
+                res.status(400).json({
+                    message: 'Nombre, usuario, correo y contraseña son requeridos'
+                });
+                return;
+            }
+
+            const exists = await User.findOne({
+                $or: [{ username: username.toLowerCase() }, { email }]
+            });
+
+            if (exists) {
+                res.status(409).json({ message: 'User or email already exists' });
+                return;
+            }
+
+            const hashedPassword = await bcrypt.hash(password, 10);
+
+            let targetChoirId: string | null = null;
+
+            if (currentUser.role === 'SUPER_ADMIN') {
+                if (bodyChoirId) {
+                    const choir = await Choir.findById(bodyChoirId);
+                    if (!choir) {
+                        res.status(400).json({ message: 'Coro inválido' });
+                        return;
+                    }
+                    targetChoirId = choir.id.toString();
+                } else if (currentUser.choirId) {
+                    targetChoirId = currentUser.choirId;
+                }
+            } else {
+                if (!currentUser.choirId) {
+                    res.status(400).json({
+                        message: 'No se encontró coro para el usuario autenticado'
+                    });
+                    return;
+                }
+                targetChoirId = currentUser.choirId;
+            }
+
+            if (!targetChoirId) {
+                res.status(400).json({
+                    message: 'No se ha podido determinar el coro para este usuario'
+                });
+                return;
+            }
+
+            const validRoles = ['ADMIN', 'EDITOR', 'VIEWER', 'USER', 'SUPER_ADMIN'] as const;
+            const requestedRole = (role as string) || 'VIEWER';
+
+            let finalRole: (typeof validRoles)[number] = 'VIEWER';
+
+            if (currentUser.role === 'SUPER_ADMIN') {
+                if (validRoles.includes(requestedRole as any)) {
+                    finalRole = requestedRole as any;
+                }
+            } else if (currentUser.role === 'ADMIN') {
+                if (['EDITOR', 'VIEWER'].includes(requestedRole)) {
+                    finalRole = requestedRole as any;
+                } else {
+                    finalRole = 'VIEWER';
+                }
+            }
+
+            const newUser = new User({
+                name,
+                username: username.toLowerCase(),
+                email,
+                password: hashedPassword,
+                role: finalRole,
+
+                // 🎵 instrument fields
+                instrumentId: instrumentId || null,
+                instrumentLabel: instrumentLabel || instrument || '',
+
+                voice: String(voice) === 'true' || voice === true,
+                bio,
+                imageUrl: req.file?.path || '',
+                imagePublicId: req.file?.filename || '',
+                choirId: targetChoirId,
+                createdBy: (req.body as any).createdBy
+            });
+
+            await newUser.save();
+
+            await registerLog({
+                req: req as any,
+                collection: 'Users',
+                action: 'create',
+                referenceId: newUser.id.toString(),
+                changes: { new: newUser.toJSON() }
+            });
+
+            res.status(200).json({
+                message: 'User created successfully',
+                user: newUser.toJSON()
+            });
+        } catch (error: any) {
+            console.error('Create user error:', error);
+            res.status(400).json({ message: error.message });
         }
-
-        const hashedPassword = await bcrypt.hash(password, 10);
-
-        const newUser = new User({
-            name,
-            username: username.toLowerCase(),
-            email,
-            password: hashedPassword,
-            role,
-            instrument,
-            // Handle boolean string from FormData
-            voice: String(voice) === 'true' || voice === true,
-            bio,
-            imageUrl: req.file?.path || '',
-            imagePublicId: req.file?.filename || ''
-        });
-
-        await newUser.save();
-
-        res.status(200).json({
-            message: 'User created successfully',
-            user: newUser
-        });
-    } catch (error: any) {
-        res.status(400).json({ message: error.message });
     }
-});
+);
 
-// 🟣 UPDATE (Admin)
-router.put('/:id', verifyToken, uploadUserImage.single('file'), async (req: Request, res: Response): Promise<void> => {
-    try {
-        const body = parseBody(req);
-        const { name, username, email, password, role, instrument, voice, bio } = body;
-        
-        const user = await User.findById(req.params.id);
-        
-        if (!user) {
-             res.status(404).json({ message: 'User not found' });
-             return;
+// UPDATE (Admin)
+router.put(
+    '/:id',
+    verifyToken,
+    uploadUserImage.single('file'),
+    async (req: Request, res: Response): Promise<void> => {
+        try {
+            const body = parseBody(req);
+            const {
+                name,
+                username,
+                email,
+                password,
+                role,
+                instrument,
+                instrumentId,
+                instrumentLabel,
+                voice,
+                bio,
+                choirId
+            } = body;
+
+            const user = await User.findById(req.params.id);
+
+            if (!user) {
+                res.status(404).json({ message: 'User not found' });
+                return;
+            }
+
+            if (req.file) {
+                if (user.imagePublicId) {
+                    await cloudinary.uploader.destroy(user.imagePublicId);
+                }
+                user.imageUrl = req.file.path;
+                user.imagePublicId = req.file.filename;
+            }
+
+            if (name) user.name = name;
+            if (username) user.username = username.toLowerCase();
+            if (email) user.email = email;
+            if (role) user.role = role;
+
+            // 🎵 instrument fields
+            if (instrumentId !== undefined) {
+                user.instrumentId = instrumentId || null;
+            }
+            if (instrumentLabel) {
+                user.instrumentLabel = instrumentLabel;
+            } else if (instrument) {
+                user.instrumentLabel = instrument;
+            }
+
+            if (bio) user.bio = bio;
+
+            if (voice !== undefined) {
+                user.voice = String(voice) === 'true' || voice === true;
+            }
+
+            if (choirId !== undefined) {
+                user.choirId = choirId || null;
+            }
+
+            if (password) {
+                user.password = await bcrypt.hash(password, 10);
+            }
+
+            await user.save();
+
+            res.json({
+                message: 'User updated successfully',
+                updatedUser: user.toJSON()
+            });
+        } catch (error: any) {
+            res.status(400).json({ message: error.message });
         }
+    }
+);
 
-        if (req.file) {
+// DELETE
+router.delete(
+    '/:id',
+    verifyToken,
+    async (req: Request, res: Response): Promise<void> => {
+        try {
+            const user = await User.findById(req.params.id);
+            if (!user) {
+                res.status(404).json({ message: 'User not found' });
+                return;
+            }
+
             if (user.imagePublicId) {
                 await cloudinary.uploader.destroy(user.imagePublicId);
             }
-            user.imageUrl = req.file.path;
-            user.imagePublicId = req.file.filename;
+
+            await User.findByIdAndDelete(req.params.id);
+            res.json({ message: 'User deleted successfully' });
+        } catch (error: any) {
+            res.status(500).json({ message: error.message });
         }
-
-        if (name) user.name = name;
-        if (username) user.username = username;
-        if (email) user.email = email;
-        if (role) user.role = role;
-        if (instrument) user.instrument = instrument;
-        if (bio) user.bio = bio;
-        
-        if (voice !== undefined) {
-            user.voice = String(voice) === 'true' || voice === true;
-        }
-
-        if (password) {
-            user.password = await bcrypt.hash(password, 10);
-        }
-
-        await user.save();
-
-        res.json({
-            message: 'User updated successfully',
-            updatedUser: user
-        });
-
-    } catch (error: any) {
-        res.status(400).json({ message: error.message });
     }
-});
-
-// DELETE
-router.delete('/:id', verifyToken, async (req: Request, res: Response): Promise<void> => {
-    try {
-        const user = await User.findById(req.params.id);
-        if (!user) {
-            res.status(404).json({ message: 'User not found' });
-            return;
-        }
-
-        if (user.imagePublicId) {
-            await cloudinary.uploader.destroy(user.imagePublicId);
-        }
-
-        await User.findByIdAndDelete(req.params.id);
-        res.json({ message: 'User deleted successfully' });
-    } catch (error: any) {
-        res.status(500).json({ message: error.message });
-    }
-});
+);
 
 export default router;

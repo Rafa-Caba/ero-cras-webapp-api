@@ -5,6 +5,8 @@ export interface ILog extends Document {
     collectionName: string;
     referenceId: Types.ObjectId;
     user: Types.ObjectId;
+    choirId: Types.ObjectId;
+
     description?: string;
     changes?: Record<string, any>;
     createdAt?: Date;
@@ -27,20 +29,25 @@ const LogSchema = new Schema<ILog>(
         },
         user: {
             type: Schema.Types.ObjectId,
-            ref: 'User', 
+            ref: 'User',
+            required: true
+        },
+        choirId: {
+            type: Schema.Types.ObjectId,
+            ref: 'Choir',
             required: true
         },
         description: {
             type: String,
             default: ''
         },
-        changes: { 
-            type: Schema.Types.Mixed, 
-            default: {} 
+        changes: {
+            type: Schema.Types.Mixed,
+            default: {}
         }
     },
     {
-        timestamps: { createdAt: true, updatedAt: false }, 
+        timestamps: { createdAt: true, updatedAt: false },
         versionKey: false
     }
 );
@@ -48,9 +55,10 @@ const LogSchema = new Schema<ILog>(
 LogSchema.set('toJSON', {
     virtuals: true,
     versionKey: false,
-    transform: function (doc, ret) {
+    transform: function (_doc, ret) {
         ret.id = ret._id;
         delete ret._id;
+        return ret;
     }
 });
 

@@ -1,65 +1,140 @@
 import express, { Request, Response } from 'express';
-import verifyToken from '../middlewares/auth';
+import { Types } from 'mongoose';
+
+import verifyToken, { RequestWithUser } from '../middlewares/auth';
 import Log from '../models/Log';
+import Choir from '../models/Choir';
 
 const router = express.Router();
 
-// 🟣 GET LOGS (Paginated & Filtered)
-router.get('/', verifyToken, async (req: Request, res: Response): Promise<void> => {
+const resolveChoirIdFromKey = async (choirKey?: string | null): Promise<string | null> => {
+    if (!choirKey) return null;
+
+    if (Types.ObjectId.isValid(choirKey)) {
+        return choirKey;
+    }
+
+    const choir = await Choir.findOne({
+        $or: [{ code: choirKey }, { name: choirKey }]
+    }).select('_id');
+
+    return choir ? (choir as any).id : null;
+};
+
+// GET LOGS (Paginated & Filtered, Choir-Scoped)
+router.get('/', verifyToken, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
-        const { page = 1, limit = 10, collection, action, userId } = req.query;
-        const skip = (Number(page) - 1) * Number(limit);
+        const {
+            page = '1',
+            limit = '10',
+            collection,
+            action,
+            userId,
+            choirId: queryChoirId,
+            choirKey
+        } = req.query as {
+            page?: string;
+            limit?: string;
+            collection?: string;
+            action?: string;
+            userId?: string;
+            choirId?: string;
+            choirKey?: string;
+        };
+
+        const pageNumber = Number(page) || 1;
+        const limitNumber = Number(limit) || 10;
+        const skip = (pageNumber - 1) * limitNumber;
 
         const filters: any = {};
 
-        // Map query params to English Schema keys
         if (collection) filters.collectionName = collection;
         if (action) filters.action = action;
         if (userId) filters.user = userId;
+
+        // 🔐 Choir scoping
+        const authUser = req.user;
+        let choirFilterId: string | null = null;
+
+        if (authUser?.role === 'SUPER_ADMIN') {
+            if (queryChoirId) {
+                choirFilterId = queryChoirId;
+            } else if (choirKey) {
+                choirFilterId = await resolveChoirIdFromKey(choirKey);
+            }
+        } else if (authUser?.choirId) {
+            choirFilterId = authUser.choirId;
+        }
+
+        if (choirFilterId) {
+            filters.choirId = choirFilterId;
+        }
 
         const [logs, total] = await Promise.all([
             Log.find(filters)
                 .sort({ createdAt: -1 })
                 .skip(skip)
-                .limit(Number(limit))
+                .limit(limitNumber)
                 .populate('user', 'name username role'),
-            Log.countDocuments(filters),
+            Log.countDocuments(filters)
         ]);
 
-        const totalPages = Math.ceil(total / Number(limit));
+        const totalPages = Math.ceil(total / limitNumber);
 
         res.json({
-            logs,
-            currentPage: Number(page),
+            logs: logs.map(l => l.toJSON()),
+            currentPage: pageNumber,
             totalPages,
-            totalLogs: total,
+            totalLogs: total
         });
-    } catch (error) {
-        res.status(500).json({ message: 'Error retrieving logs', error });
+    } catch (error: any) {
+        res.status(500).json({ message: 'Error retrieving logs', error: error.message });
     }
 });
 
-// 🟣 GET LOGS BY USER
-router.get('/user/:userId', verifyToken, async (req: Request, res: Response): Promise<void> => {
+// GET LOGS BY USER (Choir-Scoped)
+router.get('/user/:userId', verifyToken, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
         const { userId } = req.params;
         const page = parseInt(req.query.page as string) || 1;
         const limit = parseInt(req.query.limit as string) || 6;
         const skip = (page - 1) * limit;
 
+        const filters: any = { user: userId };
+
+        // Choir scoping
+        const authUser = req.user;
+        if (authUser?.role !== 'SUPER_ADMIN' && authUser?.choirId) {
+            filters.choirId = authUser.choirId;
+        } else if (authUser?.role === 'SUPER_ADMIN') {
+            const { choirId: queryChoirId, choirKey } = req.query as {
+                choirId?: string;
+                choirKey?: string;
+            };
+
+            if (queryChoirId) {
+                filters.choirId = queryChoirId;
+            } else if (choirKey) {
+                const resolved = await resolveChoirIdFromKey(choirKey);
+                if (resolved) {
+                    filters.choirId = resolved;
+                }
+            }
+        }
+
         const [logs, totalLogs] = await Promise.all([
-            Log.find({ user: userId })
+            Log.find(filters)
                 .populate('user', 'name username role')
                 .sort({ createdAt: -1 })
                 .skip(skip)
                 .limit(limit),
-            Log.countDocuments({ user: userId })
+            Log.countDocuments(filters)
         ]);
 
         const totalPages = Math.ceil(totalLogs / limit);
 
         res.json({
-            logs,
+            logs: logs.map(l => l.toJSON()),
             currentPage: page,
             totalPages
         });

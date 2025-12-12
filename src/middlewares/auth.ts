@@ -5,9 +5,11 @@ const JWT_SECRET = process.env.JWT_SECRET || 'secretoSuperUltraSeguro';
 
 export interface UserPayload extends JwtPayload {
     id: string;
-    name: string;   
     username: string;
-    role: string;   
+    role: string;
+    name?: string;
+    choirId?: string;
+    choirName?: string;
 }
 
 export interface RequestWithUser extends Request {
@@ -27,9 +29,9 @@ const verifyToken = (req: RequestWithUser, res: Response, next: NextFunction): v
 
     try {
         const decoded = jwt.verify(token, JWT_SECRET) as UserPayload;
-        
+
         req.user = decoded;
-        
+
         next();
     } catch (err) {
         res.status(401).json({ message: 'Invalid Token' });

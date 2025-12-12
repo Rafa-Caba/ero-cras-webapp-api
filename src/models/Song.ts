@@ -9,6 +9,8 @@ export interface ISong extends Document {
     songTypeId?: Types.ObjectId | null;
     songTypeName?: string;
 
+    choirId?: Types.ObjectId | null;
+
     createdBy?: Types.ObjectId;
     updatedBy?: Types.ObjectId;
     createdAt?: Date;
@@ -28,6 +30,13 @@ const SongSchema = new Schema<ISong>(
             default: null
         },
 
+        choirId: {
+            type: Schema.Types.ObjectId,
+            ref: 'Choir',
+            default: null,
+            index: true
+        },
+
         createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
         updatedBy: { type: Schema.Types.ObjectId, ref: 'User' }
     },
@@ -40,6 +49,11 @@ SongSchema.set('toJSON', {
     transform: (_doc, ret: any) => {
         ret.id = ret._id.toString();
         delete ret._id;
+
+        if (ret.choirId && typeof ret.choirId === 'object' && ret.choirId.toString) {
+            ret.choirId = ret.choirId.toString();
+        }
+
         return ret;
     }
 });

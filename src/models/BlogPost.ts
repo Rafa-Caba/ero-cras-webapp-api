@@ -8,6 +8,7 @@ export interface IBlogPost extends Document {
     isPublic: boolean;
 
     author: Types.ObjectId;
+    choirId?: Types.ObjectId;
 
     // Likes & Comments
     likes: number;
@@ -34,6 +35,7 @@ const BlogPostSchema = new Schema<IBlogPost>(
         isPublic: { type: Boolean, default: false },
 
         author: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        choirId: { type: Schema.Types.ObjectId, ref: 'Choir', default: null },
 
         likes: { type: Number, default: 0 },
         likesUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
@@ -53,9 +55,12 @@ const BlogPostSchema = new Schema<IBlogPost>(
 BlogPostSchema.set('toJSON', {
     virtuals: true,
     versionKey: false,
-    transform: function (doc, ret) {
-        ret.id = ret._id;
-        delete ret._id;
+    transform: function (_doc, ret: any) {
+        if (ret._id) {
+            ret.id = ret._id.toString();
+            delete ret._id;
+        }
+        return ret;
     }
 });
 

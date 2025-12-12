@@ -4,6 +4,8 @@ import jwt, { JwtPayload } from 'jsonwebtoken';
 import verifyToken, { RequestWithUser } from '../middlewares/auth';
 import User from '../models/User';
 import RefreshToken from '../models/RefreshToken';
+import Choir from '../models/Choir';
+import { normalizeUserWithChoir } from '../utils/normalizeUser';
 
 const router = express.Router();
 
@@ -16,58 +18,77 @@ const REFRESH_TOKEN_EXPIRY = '7d';
 // REGISTER (Public - Mobile App)
 router.post('/register', async (req: Request, res: Response): Promise<void> => {
     try {
-        const { name, username, email, password, instrument } = req.body;
+        const {
+            name,
+            username,
+            email,
+            password,
+            instrument,
+            choirCode
+        } = req.body;
 
-        if (!username || !email || !password) {
-            res.status(400).json({ message: 'Missing required fields' });
-            return;
-        }
-
-        const existingUser = await User.findOne({
-            $or: [{ username: username.toLowerCase() }, { email }]
-        });
-
-        if (existingUser) {
-            res.status(409).json({ message: 'User or email already exists' });
+        const existing = await User.findOne({ $or: [{ email }, { username }] });
+        if (existing) {
+            res.status(400).json({ message: 'El usuario o correo ya existen' });
             return;
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
 
+        const userCount = await User.countDocuments();
+        const role = userCount === 0 ? 'SUPER_ADMIN' : 'VIEWER';
+
+        const codeToUse = choirCode || 'eroc1';
+        const choir = await Choir.findOne({ code: codeToUse });
+
+        if (!choir) {
+            res.status(400).json({
+                message: `No se encontró un coro con el código "${codeToUse}"`
+            });
+            return;
+        }
+
         const newUser = new User({
             name,
-            username: username.toLowerCase(),
+            username,
             email,
             password: hashedPassword,
+            role,
             instrument: instrument || '',
-            role: 'VIEWER'
+            choirId: choir._id
         });
 
         await newUser.save();
 
-        const accessToken = jwt.sign(
-            { id: newUser._id, username: newUser.username, role: newUser.role },
-            JWT_SECRET,
-            { expiresIn: ACCESS_TOKEN_EXPIRY }
-        );
+        const payload = {
+            id: newUser.id,
+            username: newUser.username,
+            role: newUser.role,
+            choirId: newUser.choirId?.toString()
+        };
+
+        const accessToken = jwt.sign(payload, process.env.JWT_SECRET as string, {
+            expiresIn: '15m'
+        });
 
         const refreshToken = jwt.sign(
-            { id: newUser._id, username: newUser.username },
-            JWT_REFRESH_SECRET,
-            { expiresIn: REFRESH_TOKEN_EXPIRY }
+            payload,
+            process.env.JWT_REFRESH_SECRET as string,
+            {
+                expiresIn: '7d'
+            }
         );
 
-        await RefreshToken.create({ token: refreshToken, userId: newUser._id });
-
         res.status(201).json({
+            message: 'Usuario registrado correctamente',
             accessToken,
             refreshToken,
             role: newUser.role,
             user: newUser.toJSON()
         });
-
     } catch (error: any) {
-        res.status(500).json({ message: error.message });
+        console.error('Register error:', error);
+        res.status(500).json({ message: error.message || 'Error al registrar usuario' });
     }
 });
 
@@ -76,16 +97,12 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     const usernameOrEmail = req.body.username || req.body.usernameOrEmail;
     const { password } = req.body;
 
-    console.log({ usernameOrEmail, password });
-    console.log({ JWT_SECRET, JWT_REFRESH_SECRET });
-
     try {
         const user = await User.findOne({
-            $or: [
-                { email: usernameOrEmail },
-                { username: usernameOrEmail }
-            ]
-        }).populate('themeId');
+            $or: [{ email: usernameOrEmail }, { username: usernameOrEmail }]
+        })
+            .populate('themeId')
+            .populate('choirId');
 
         if (!user) {
             res.status(401).json({ message: 'User not found' });
@@ -103,14 +120,30 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
+        const normalizedUser = normalizeUserWithChoir(user);
+
+        const choirIdString: string | undefined = normalizedUser.choirId;
+        const choirName: string | undefined = normalizedUser.choirName;
+        const choirCode: string | undefined = normalizedUser.choirCode;
+
         const accessToken = jwt.sign(
-            { id: user._id, username: user.username, role: user.role },
+            {
+                id: user.id,
+                username: user.username,
+                role: user.role,
+                name: user.name,
+                choirId: choirIdString,
+                choirName
+            },
             JWT_SECRET,
             { expiresIn: ACCESS_TOKEN_EXPIRY }
         );
 
         const refreshToken = jwt.sign(
-            { id: user._id, username: user.username },
+            {
+                id: user.id,
+                username: user.username
+            },
             JWT_REFRESH_SECRET,
             { expiresIn: REFRESH_TOKEN_EXPIRY }
         );
@@ -125,12 +158,16 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
             accessToken,
             refreshToken,
             role: user.role,
-            user: user.toJSON()
+            user: normalizedUser,
+            choirId: choirIdString,
+            choirCode
         });
     } catch (error: any) {
+        console.error('Login error:', error);
         res.status(500).json({ message: error.message });
     }
 });
+
 
 // REFRESH TOKEN
 router.post(['/refresh', '/refresh-token'], async (req: Request, res: Response): Promise<void> => {
@@ -156,15 +193,23 @@ router.post(['/refresh', '/refresh-token'], async (req: Request, res: Response):
 
         const dbUser = await User.findById(userPayload.id);
         const currentRole = dbUser ? dbUser.role : 'VIEWER';
+        const currentName = dbUser ? dbUser.name : undefined;
+        const currentChoirId = dbUser?.choirId ? dbUser.choirId.toString() : undefined;
 
         const newAccessToken = jwt.sign(
-            { id: userPayload.id, username: userPayload.username, role: currentRole },
+            {
+                id: userPayload.id as string,
+                username: userPayload.username as string,
+                role: currentRole,
+                name: currentName,
+                choirId: currentChoirId
+            },
             JWT_SECRET,
             { expiresIn: ACCESS_TOKEN_EXPIRY }
         );
 
         res.json({ accessToken: newAccessToken });
-    } catch (err) {
+    } catch (err: any) {
         res.status(403).json({ message: 'Token expired or invalid' });
     }
 });

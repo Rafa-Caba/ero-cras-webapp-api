@@ -19,8 +19,10 @@ export interface ISettings extends Document {
         secondary: string;
     };
 
-    history: any; // TipTap
-    
+    history: any;
+
+    choirId?: Types.ObjectId;
+
     createdBy?: Types.ObjectId;
     updatedBy?: Types.ObjectId;
 }
@@ -46,8 +48,14 @@ const SettingsSchema = new Schema<ISettings>(
         },
 
         history: { type: Schema.Types.Mixed, default: {} },
-        
-        // 🛠️ FIX: Added fields to Schema
+
+        choirId: {
+            type: Schema.Types.ObjectId,
+            ref: 'Choir',
+            required: false,
+            index: true
+        },
+
         createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
         updatedBy: { type: Schema.Types.ObjectId, ref: 'User' }
     },
@@ -57,9 +65,10 @@ const SettingsSchema = new Schema<ISettings>(
 SettingsSchema.set('toJSON', {
     virtuals: true,
     versionKey: false,
-    transform: function (doc, ret) {
+    transform: function (_doc, ret) {
         ret.id = ret._id;
         delete ret._id;
+        return ret;
     }
 });
 

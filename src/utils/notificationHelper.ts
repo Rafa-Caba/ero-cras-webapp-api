@@ -1,5 +1,6 @@
 import User from '../models/User';
 import { sendPushNotification } from './pushNotifications';
+import { Types } from 'mongoose';
 
 const extractTextFromTiptap = (content: any): string => {
     if (typeof content === 'string') return content;
@@ -38,13 +39,28 @@ export const notifyCommunity = async (
 ) => {
     (async () => {
         try {
-            const query: any = { pushToken: { $exists: true, $ne: null } };
-            if (senderId) {
+            let choirFilter: any = {};
+
+            if (senderId && Types.ObjectId.isValid(senderId)) {
+                const sender = await User.findById(senderId).select('_id choirId');
+                if (sender?.choirId) {
+                    choirFilter.choirId = sender.choirId;
+                }
+            }
+
+            const query: any = {
+                pushToken: { $exists: true, $ne: null },
+                ...choirFilter
+            };
+
+            if (senderId && Types.ObjectId.isValid(senderId)) {
                 query._id = { $ne: senderId };
             }
 
             const users = await User.find(query).select('pushToken');
-            const tokens = users.map(u => u.pushToken as string).filter(t => t);
+            const tokens = users
+                .map(u => u.pushToken as string)
+                .filter(Boolean);
 
             if (tokens.length === 0) return;
 
@@ -52,38 +68,50 @@ export const notifyCommunity = async (
             let body = '';
             let data: any = {};
 
-            switch (category) {
-                case 'CHAT':
-                    title = `Nuevo mensaje de ${senderName}`;
-                    data = { type: 'CHAT', messageId: item._id };
+            const itemId: string =
+                (item && (item.id as string)) ||
+                (item && item._id && item._id.toString()) ||
+                '';
 
-                    if (item.type === 'TEXT') {
+            switch (category) {
+                case 'CHAT': {
+                    title = `Nuevo mensaje de ${senderName}`;
+                    data = { type: 'CHAT', messageId: itemId };
+
+                    if (item.type === 'TEXT' || item.type === 'text') {
                         const text = extractTextFromTiptap(item.content);
                         body = text || 'Mensaje recibido';
                     } else {
-                        body = `Enviado a ${item.type.toLowerCase()}`;
+                        body = `Enviado un ${String(item.type).toLowerCase()}`;
                     }
                     break;
+                }
 
-                case 'ANNOUNCEMENT':
-                    title = "📢 Nuevo Aviso!";
+                case 'ANNOUNCEMENT': {
+                    title = '📢 Nuevo Aviso!';
                     body = typeof item.title === 'string' ? item.title : 'Revísalo en la app!';
-                    data = { type: 'ANNOUNCEMENT', id: item._id };
+                    data = { type: 'ANNOUNCEMENT', id: itemId };
                     break;
+                }
 
-                case 'BLOG':
-                    title = "📝 Nuevo Blog";
+                case 'BLOG': {
+                    title = '📝 Nuevo Blog';
                     body = typeof item.title === 'string' ? item.title : 'Lee la nueva historia';
-                    data = { type: 'BLOG', id: item._id };
+                    data = { type: 'BLOG', id: itemId };
                     break;
+                }
             }
 
-            console.log(`🔔 Notifying ${tokens.length} users about ${category}. Body preview: ${body.substring(0, 20)}...`);
+            console.log(
+                `🔔 Notifying ${tokens.length} users about ${category}. Body preview: ${body.substring(
+                    0,
+                    40
+                )}...`
+            );
 
             await sendPushNotification(tokens, title, body, data);
-
         } catch (error) {
-            console.error("Notification Helper Error:", error);
+            console.error('Notification Helper Error:', error);
         }
     })();
 };

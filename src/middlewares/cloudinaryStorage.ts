@@ -36,7 +36,7 @@ class CustomCloudinaryStorage implements StorageEngine {
             (error, result) => {
                 if (error) return cb(error);
                 if (!result) return cb(new Error('Cloudinary upload failed - no result'));
-                
+
                 cb(null, {
                     path: result.secure_url,
                     filename: result.public_id,
@@ -56,7 +56,7 @@ class CustomCloudinaryStorage implements StorageEngine {
     }
 }
 
-// 🟢 EXPORTS (Strict English Naming)
+// 🟢 UPLOADERS (Strict English Naming)
 
 export const uploadUserImage = multer({
     storage: new CustomCloudinaryStorage({
@@ -68,7 +68,7 @@ export const uploadUserImage = multer({
 export const uploadGalleryImage = multer({
     storage: new CustomCloudinaryStorage({
         folder: 'ero-cras-media/gallery',
-        resourceType: 'auto', 
+        resourceType: 'auto',
         allowedFormats: ['jpg', 'png', 'jpeg', 'gif', 'mp4', 'mov', 'webm']
     })
 });
@@ -100,7 +100,7 @@ export const uploadChatImage = multer({
 export const uploadChatMedia = multer({
     storage: new CustomCloudinaryStorage({
         folder: 'ero-cras-media/chats/media',
-        resourceType: 'auto', 
+        resourceType: 'auto',
         allowedFormats: [
             'mp3', 'wav', 'mp4', 'mov', 'webm', 'm4a', 'aac', 'ogg',
             'pdf', 'doc', 'docx', 'txt', 'xls', 'xlsx', 'ppt', 'pptx'
@@ -111,15 +111,37 @@ export const uploadChatMedia = multer({
 export const uploadSongAudio = multer({
     storage: new CustomCloudinaryStorage({
         folder: 'ero-cras-media/songs/audio',
-        resourceType: 'video', // Cloudinary treats audio as video resource type
+        resourceType: 'video',
         allowedFormats: ['mp3', 'm4a', 'wav', 'aac']
+    })
+});
+
+// Choir logos
+export const uploadChoirLogo = multer({
+    storage: new CustomCloudinaryStorage({
+        folder: 'ero-cras-media/choirs/logo',
+        resourceType: 'image',
+        allowedFormats: ['jpg', 'png', 'jpeg', 'gif', 'webp']
+    })
+});
+
+// Instrument icons
+export const uploadInstrumentIcon = multer({
+    storage: new CustomCloudinaryStorage({
+        folder: 'ero-cras-media/instruments/icons',
+        resourceType: 'image',
+        allowedFormats: ['jpg', 'png', 'jpeg', 'gif', 'webp']
     })
 });
 
 const storage = multer.memoryStorage();
 export const uploadChatFile = multer({ storage });
 
-export const streamUpload = (buffer: Buffer, originalName: string, resourceType: 'auto' | 'image' | 'video' | 'raw' = 'auto'): Promise<any> => {
+export const streamUpload = (
+    buffer: Buffer,
+    originalName: string,
+    resourceType: 'auto' | 'image' | 'video' | 'raw' = 'auto'
+): Promise<any> => {
     return new Promise((resolve, reject) => {
         const uniqueId = `chatfile_${Date.now()}_${Math.floor(Math.random() * 9999)}`;
         const publicIdPath = `ero-cras-media/chats/files/${uniqueId}`;
@@ -135,8 +157,40 @@ export const streamUpload = (buffer: Buffer, originalName: string, resourceType:
                 else reject(error);
             }
         );
-        
+
         const { Readable } = require('stream');
         Readable.from(buffer).pipe(stream);
+    });
+};
+
+// Generic delete helper (reusable for all models)
+export const deleteFromCloudinary = (
+    publicId: string,
+    resourceType: 'image' | 'video' | 'raw' | 'auto' = 'image'
+): Promise<void> => {
+    return new Promise((resolve, reject) => {
+        if (!publicId) {
+            return resolve();
+        }
+
+        cloudinary.uploader.destroy(
+            publicId,
+            { resource_type: resourceType },
+            (error, result) => {
+                if (error) {
+                    console.error('Cloudinary delete error:', error);
+                    return reject(error);
+                }
+
+                // result?.result can be 'ok', 'not found', etc.
+                if (result && (result as any).result === 'ok') {
+                    console.log(`Cloudinary: deleted ${publicId}`);
+                } else {
+                    console.log(`Cloudinary: delete response for ${publicId}:`, result);
+                }
+
+                resolve();
+            }
+        );
     });
 };

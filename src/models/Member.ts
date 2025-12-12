@@ -2,10 +2,15 @@ import { Schema, model, Document, Types } from 'mongoose';
 
 export interface IMember extends Document {
     name: string;
-    instrument: string;
+
+    instrumentId?: Types.ObjectId;
+    instrumentLabel?: string;
+
     voice: boolean;
     imageUrl?: string;
     imagePublicId?: string;
+
+    choirId: Types.ObjectId;
 
     createdBy?: Types.ObjectId;
     updatedBy?: Types.ObjectId;
@@ -21,11 +26,8 @@ const MemberSchema = new Schema<IMember>(
             required: true,
             trim: true
         },
-        instrument: {
-            type: String,
-            required: true,
-            trim: true
-        },
+        instrumentId: { type: Schema.Types.ObjectId, ref: 'Choir', default: null },
+        instrumentLabel: { type: String, default: '' },
         voice: {
             type: Boolean,
             default: false,
@@ -39,10 +41,15 @@ const MemberSchema = new Schema<IMember>(
             type: String,
             default: null
         },
+        choirId: {
+            type: Schema.Types.ObjectId,
+            ref: 'Choir',
+            required: true
+        },
         createdBy: {
             type: Schema.Types.ObjectId,
             ref: 'User',
-            required: false,
+            required: false
         },
         updatedBy: {
             type: Schema.Types.ObjectId,
@@ -56,9 +63,10 @@ const MemberSchema = new Schema<IMember>(
 MemberSchema.set('toJSON', {
     virtuals: true,
     versionKey: false,
-    transform: function (doc, ret) {
+    transform: function (_doc, ret) {
         ret.id = ret._id;
         delete ret._id;
+        return ret;
     }
 });
 

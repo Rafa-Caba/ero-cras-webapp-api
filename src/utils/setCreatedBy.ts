@@ -1,29 +1,49 @@
-import { Request, Response, NextFunction } from 'express';
+import { NextFunction, Response } from 'express';
+import { RequestWithUser } from '../middlewares/auth';
 
-export interface RequestWithUser extends Request {
-    user?: {
-        id: string;
-        name: string;
-        username: string;
-        role: string;
-    };
-    usuario?: any;
-}
+type MutableRequest = RequestWithUser & { body: any };
 
-export const setCreatedBy = (req: RequestWithUser, res: Response, next: NextFunction) => {
-    const currentUser = req.user || req.usuario;
-    
-    if (currentUser && req.method === 'POST') {
-        req.body.createdBy = currentUser.id;
+const ensureBodyObject = (req: MutableRequest) => {
+    if (!req.body || typeof req.body !== 'object') {
+        req.body = {};
     }
+};
+
+export const setCreatedBy = (
+    req: RequestWithUser,
+    _res: Response,
+    next: NextFunction
+): void => {
+    const r = req as MutableRequest;
+    ensureBodyObject(r);
+
+    if (r.user?.id) {
+        r.body.createdBy = r.user.id;
+
+        if (r.user.choirId && !r.body.choirId) {
+            r.body.choirId = r.user.choirId;
+        }
+    }
+
     next();
 };
 
-export const setUpdatedBy = (req: RequestWithUser, res: Response, next: NextFunction) => {
-    const currentUser = req.user || req.usuario;
+export const setUpdatedBy = (
+    req: RequestWithUser,
+    _res: Response,
+    next: NextFunction
+): void => {
+    const r = req as MutableRequest;
+    ensureBodyObject(r);
 
-    if (currentUser && (req.method === 'PUT' || req.method === 'PATCH')) {
-        req.body.updatedBy = currentUser.id;
+    if (r.user?.id) {
+        r.body.updatedBy = r.user.id;
+
+        // Multi-choir: keep behavior consistent with setCreatedBy
+        if (r.user.choirId && !r.body.choirId) {
+            r.body.choirId = r.user.choirId;
+        }
     }
+
     next();
 };

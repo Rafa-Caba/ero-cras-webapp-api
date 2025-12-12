@@ -21,7 +21,7 @@ const RefreshTokenSchema = new Schema<IRefreshToken>(
         createdAt: {
             type: Date,
             default: Date.now,
-            expires: '7d' 
+            expires: '7d'
         }
     },
     {
@@ -29,6 +29,17 @@ const RefreshTokenSchema = new Schema<IRefreshToken>(
     }
 );
 
-const RefreshToken = model<IRefreshToken>('RefreshToken', RefreshTokenSchema);
+RefreshTokenSchema.set('toJSON', {
+    virtuals: true,
+    versionKey: false,
+    transform: function (_doc, ret: any) {
+        if (ret._id) {
+            ret.id = ret._id.toString();
+            delete ret._id;
+        }
+        return ret;
+    }
+});
 
+const RefreshToken = model<IRefreshToken>('RefreshToken', RefreshTokenSchema);
 export default RefreshToken;

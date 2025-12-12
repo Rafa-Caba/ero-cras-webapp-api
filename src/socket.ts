@@ -6,54 +6,87 @@ interface ConnectedUser {
     name: string;
     username: string;
     imageUrl?: string;
+    choirId: string;
+    role?: string;
 }
 
-export const configuringSockets = (io: Server) => {
-    // In-memory list of connected users
-    // Note: In a multi-server setup (scaling), you would use Redis for this.
+const getChoirRoom = (choirId: string) => `choir:${choirId}`;
+
+export const configuringSockets = (io: Server): void => {
     let connectedUsers: ConnectedUser[] = [];
 
     io.on('connection', (socket: Socket) => {
-        // 1. Register User on Connect
         const user = socket.handshake.auth?.user;
-        
+
         if (user) {
+            const choirId: string =
+                user.choirId || user.choirId?._id || user.choir || 'global';
+
             const newUser: ConnectedUser = {
                 socketId: socket.id,
-                id: user.id || user._id,
-                name: user.name || user.nombre,
+                id: (user.id || user._id || '').toString(),
+                name: user.name || user.nombre || 'Usuario',
                 username: user.username,
-                imageUrl: user.imageUrl || user.fotoPerfilUrl
+                imageUrl: user.imageUrl || user.fotoPerfilUrl,
+                choirId,
+                role: user.role,
             };
 
-            // Add to list
-            connectedUsers.push(newUser);
-            console.log(`🟢 User Connected: ${newUser.username} (${socket.id})`);
+            const choirRoom = getChoirRoom(choirId);
 
-            // Broadcast updated list to ALL clients
-            io.emit('online-users', connectedUsers);
+            socket.join(choirRoom);
+
+            // Track connected user
+            connectedUsers.push(newUser);
+
+            console.log(
+                `🟢 User Connected: ${newUser.username} (${socket.id}) [choir=${choirId}]`
+            );
+
+            const choirUsers = connectedUsers.filter(
+                (u) => u.choirId === choirId
+            );
+            io.to(choirRoom).emit('online-users', choirUsers);
+        } else {
+            console.log(`⚪ Socket connected without user info: ${socket.id}`);
         }
 
-        // 2. Handle Typing
         socket.on('typing', (isTyping: boolean) => {
-            if (user) {
-                // Broadcast to everyone EXCEPT the sender
-                socket.broadcast.emit('user-typing', {
-                    username: user.username,
-                    isTyping
-                });
-            }
+            if (!user) return;
+
+            const choirId: string =
+                user.choirId || user.choirId?._id || user.choir || 'global';
+            const choirRoom = getChoirRoom(choirId);
+
+            socket.to(choirRoom).emit('user-typing', {
+                username: user.username,
+                isTyping,
+            });
         });
 
-        // 3. Handle Disconnect
         socket.on('disconnect', () => {
             console.log(`🔴 Socket Disconnected: ${socket.id}`);
-            
-            // Remove user from list
-            connectedUsers = connectedUsers.filter(u => u.socketId !== socket.id);
-            
-            // Broadcast new list
-            io.emit('online-users', connectedUsers);
+
+            const disconnectedUser = connectedUsers.find(
+                (u) => u.socketId === socket.id
+            );
+
+            connectedUsers = connectedUsers.filter(
+                (u) => u.socketId !== socket.id
+            );
+
+            if (disconnectedUser) {
+                const choirRoom = getChoirRoom(disconnectedUser.choirId);
+                const choirUsers = connectedUsers.filter(
+                    (u) => u.choirId === disconnectedUser.choirId
+                );
+
+                io.to(choirRoom).emit('online-users', choirUsers);
+            } else {
+                console.log(
+                    `ℹ️ Disconnected socket had no stored user: ${socket.id}`
+                );
+            }
         });
     });
 };

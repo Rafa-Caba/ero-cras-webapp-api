@@ -13,10 +13,15 @@ export interface IGalleryImage extends Document {
     imageLogo: boolean;
     imageGallery: boolean;
     imageLeftMenu?: boolean;
-    imageRightMenu?: boolean
+    imageRightMenu?: boolean;
+
+    choirId: Types.ObjectId;
 
     createdBy?: Types.ObjectId;
     updatedBy?: Types.ObjectId;
+
+    createdAt: Date;
+    updatedAt: Date;
 }
 
 const GalleryImageSchema = new Schema<IGalleryImage>(
@@ -25,7 +30,12 @@ const GalleryImageSchema = new Schema<IGalleryImage>(
         description: { type: String, default: '' },
         imageUrl: { type: String, required: true },
         imagePublicId: { type: String, default: null },
-        mediaType: { type: String, enum: ['IMAGE', 'VIDEO'], default: 'IMAGE', uppercase: true },
+        mediaType: {
+            type: String,
+            enum: ['IMAGE', 'VIDEO'],
+            default: 'IMAGE',
+            uppercase: true
+        },
 
         // Boolean Flags
         imageStart: { type: Boolean, default: false },
@@ -36,6 +46,12 @@ const GalleryImageSchema = new Schema<IGalleryImage>(
         imageLeftMenu: { type: Boolean, default: false },
         imageRightMenu: { type: Boolean, default: false },
 
+        choirId: {
+            type: Schema.Types.ObjectId,
+            ref: 'Choir',
+            required: true
+        },
+
         createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
         updatedBy: { type: Schema.Types.ObjectId, ref: 'User' }
     },
@@ -45,9 +61,10 @@ const GalleryImageSchema = new Schema<IGalleryImage>(
 GalleryImageSchema.set('toJSON', {
     virtuals: true,
     versionKey: false,
-    transform: function (doc, ret) {
+    transform: function (_doc, ret) {
         ret.id = ret._id;
         delete ret._id;
+        return ret;
     }
 });
 

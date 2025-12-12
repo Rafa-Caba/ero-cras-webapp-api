@@ -6,7 +6,7 @@ export const ensureSettingsExists = async () => {
         if (count === 0) {
             const newSettings = new Settings();
             await newSettings.save();
-            // console.log('🌟 Initial Settings document created.');
+            console.log('🌟 Initial Settings document created.');
         }
     } catch (error) {
         console.error('Error initializing settings:', error);

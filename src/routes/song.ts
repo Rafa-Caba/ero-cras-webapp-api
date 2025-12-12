@@ -1,39 +1,53 @@
-import express, { NextFunction, Request, Response } from "express";
-import verifyToken, { RequestWithUser } from "../middlewares/auth";
-import Song from "../models/Song";
-import "../models/SongType";
-import { setUpdatedBy, setCreatedBy } from "../utils/setCreatedBy";
+import express, { NextFunction, Request, Response } from 'express';
+import { Types } from 'mongoose';
+
+import verifyToken, { RequestWithUser } from '../middlewares/auth';
+import Song from '../models/Song';
+import Choir from '../models/Choir';
+import '../models/SongType';
+import { setUpdatedBy, setCreatedBy } from '../utils/setCreatedBy';
 import {
     applyPopulateAuthors,
     applyPopulateSingleAuthor
-} from "../utils/populateHelpers";
-import { registerLog } from "../utils/logger";
-import { uploadSongAudio } from "../middlewares/cloudinaryStorage";
+} from '../utils/populateHelpers';
+import { registerLog } from '../utils/logger';
+import { uploadSongAudio } from '../middlewares/cloudinaryStorage';
 
 const router = express.Router();
 
-/**
- * Helper: Parse Request Body (supports { data: JSON } from mobile / multipart)
- */
 const parseBody = (req: Request) => {
     let body = req.body;
-    if (req.body.data && typeof req.body.data === "string") {
+    if (req.body.data && typeof req.body.data === 'string') {
         try {
             body = JSON.parse(req.body.data);
         } catch (e) {
-            console.error("Error parsing JSON from mobile:", e);
+            console.error('Error parsing JSON from mobile:', e);
         }
     }
     return body;
+};
+
+const resolveChoirIdFromKey = async (choirKey?: string | null): Promise<string | null> => {
+    if (!choirKey) return null;
+
+    if (Types.ObjectId.isValid(choirKey)) {
+        return choirKey;
+    }
+
+    const choir = await Choir.findOne({
+        $or: [{ code: choirKey }, { name: choirKey }]
+    }).select('_id');
+
+    return choir ? (choir as any).id : null;
 };
 
 const normalizeSong = (doc: any) => {
     if (!doc) return doc;
 
     const obj =
-        typeof doc.toJSON === "function"
+        typeof doc.toJSON === 'function'
             ? doc.toJSON()
-            : typeof doc.toObject === "function"
+            : typeof doc.toObject === 'function'
                 ? doc.toObject({ virtuals: true, versionKey: false })
                 : { ...doc };
 
@@ -45,54 +59,77 @@ const normalizeSong = (doc: any) => {
     const rawType = obj.songTypeId;
 
     if (rawType) {
-        if (typeof rawType === "object") {
+        if (typeof rawType === 'object') {
             const typeId =
                 rawType._id?.toString?.() ??
                 rawType.id?.toString?.() ??
                 String(rawType);
 
             obj.songTypeId = typeId;
-            obj.songTypeName = rawType.name ?? obj.songTypeName ?? "";
+            obj.songTypeName = rawType.name ?? obj.songTypeName ?? '';
         } else {
             obj.songTypeId = rawType.toString();
         }
     } else {
         obj.songTypeId = null;
-        obj.songTypeName = obj.songTypeName ?? "";
+        obj.songTypeName = obj.songTypeName ?? '';
+    }
+
+    // Normalize choirId to string (if populated)
+    if (obj.choirId && typeof obj.choirId === 'object' && obj.choirId.toString) {
+        obj.choirId = obj.choirId.toString();
     }
 
     return obj;
 };
 
-// PUBLIC ENDPOINT - List all songs
+// PUBLIC ENDPOINT 
 router.get(
-    "/public",
-    async (_req: Request, res: Response): Promise<void> => {
+    '/public',
+    async (req: Request, res: Response): Promise<void> => {
         try {
-            const docs = await Song.find()
-                .sort({ createdAt: -1 })
-                .populate("songTypeId", "name order")
-                .populate("createdBy", "name username");
+            const { choirId, choirKey } = req.query as {
+                choirId?: string;
+                choirKey?: string;
+            };
 
+            const filter: any = {};
+
+            if (choirId) {
+                filter.choirId = choirId;
+            } else if (choirKey) {
+                const resolved = await resolveChoirIdFromKey(choirKey);
+                if (resolved) {
+                    filter.choirId = resolved;
+                }
+            }
+
+            const query = Song.find(filter)
+                .sort({ createdAt: -1 })
+                .populate('songTypeId', 'name order')
+                .populate('createdBy', 'name username');
+
+            const docs = await query;
             const songs = docs.map(normalizeSong);
 
             res.json(songs);
         } catch (error: any) {
-            console.error("Error retrieving public songs:", error);
-            res.status(500).json({ message: "Error retrieving public songs" });
+            console.error('Error retrieving public songs:', error);
+            res.status(500).json({ message: 'Error retrieving public songs' });
         }
     }
 );
 
 // CREATE
 router.post(
-    "/",
+    '/',
     verifyToken,
-    uploadSongAudio.single("file"),
+    uploadSongAudio.single('file'),
     setCreatedBy,
     async (req: RequestWithUser, res: Response): Promise<void> => {
         try {
             const body = parseBody(req);
+            const user = req.user;
 
             const { title, content, composer, songTypeId } = body;
 
@@ -103,9 +140,23 @@ router.post(
 
             if (!title || !content) {
                 res.status(400).json({
-                    message: "Title and Content are required"
+                    message: 'Title and Content are required'
                 });
                 return;
+            }
+
+            let targetChoirId: string | null = null;
+
+            if (user?.role === 'SUPER_ADMIN') {
+                if (body.choirId) {
+                    targetChoirId = body.choirId;
+                } else if (body.choirKey) {
+                    targetChoirId = await resolveChoirIdFromKey(body.choirKey);
+                } else if (user.choirId) {
+                    targetChoirId = user.choirId;
+                }
+            } else if (user?.choirId) {
+                targetChoirId = user.choirId;
             }
 
             const newSong = new Song({
@@ -114,99 +165,165 @@ router.post(
                 composer,
                 songTypeId: songTypeId || null,
                 audioUrl,
+                choirId: targetChoirId || null,
                 createdBy: req.body.createdBy
             });
 
             await newSong.save();
 
-            if (!newSong._id) return;
+            if (!newSong.id) {
+                res.status(201).json({
+                    message: 'Song created successfully',
+                    song: normalizeSong(newSong)
+                });
+                return;
+            }
 
             await registerLog({
                 req: req as any,
-                collection: "Songs",
-                action: "create",
-                referenceId: newSong._id.toString(),
-                changes: { new: newSong }
+                collection: 'Songs',
+                action: 'create',
+                referenceId: newSong.id.toString(),
+                changes: { new: newSong.toJSON() }
             });
 
-            res
-                .status(201)
-                .json({ message: "Song created successfully", song: normalizeSong(newSong) });
+            res.status(201).json({
+                message: 'Song created successfully',
+                song: normalizeSong(newSong)
+            });
         } catch (error: any) {
-            console.error("Create Song Error:", error);
+            console.error('Create Song Error:', error);
             res.status(500).json({
-                message: "Error creating song",
+                message: 'Error creating song',
                 error: error.message
             });
         }
     }
 );
 
-// ADMIN LIST - All songs
+// ADMIN LIST 
 router.get(
-    "/",
+    '/',
     verifyToken,
-    async (_req: Request, res: Response): Promise<void> => {
+    async (req: RequestWithUser, res: Response): Promise<void> => {
         try {
-            const docs = await applyPopulateAuthors(
-                Song.find().populate("songTypeId", "name order")
-            );
+            const user = req.user;
+            const { choirId, choirKey } = req.query as {
+                choirId?: string;
+                choirKey?: string;
+            };
+
+            const filter: any = {};
+
+            if (user?.role !== 'SUPER_ADMIN') {
+                if (user?.choirId) {
+                    filter.choirId = user.choirId;
+                }
+            } else {
+                if (choirId) {
+                    filter.choirId = choirId;
+                } else if (choirKey) {
+                    const resolved = await resolveChoirIdFromKey(choirKey);
+                    if (resolved) {
+                        filter.choirId = resolved;
+                    }
+                } else if (user?.choirId) {
+                    filter.choirId = user.choirId;
+                }
+            }
+
+            const query = Song.find(filter).populate('songTypeId', 'name order');
+            const docs = await applyPopulateAuthors(query);
 
             const songs = docs.map(normalizeSong);
 
             res.json(songs);
         } catch (error: any) {
-            console.error("Error retrieving songs:", error);
-            res.status(500).json({ message: "Error retrieving songs" });
+            console.error('Error retrieving songs:', error);
+            res.status(500).json({ message: 'Error retrieving songs' });
         }
     }
 );
 
-// GET ONE
+// GET ONE 
 router.get(
-    "/:id",
+    '/:id',
     verifyToken,
-    async (req: Request, res: Response, _next: NextFunction): Promise<void> => {
+    async (req: RequestWithUser, res: Response, _next: NextFunction): Promise<void> => {
         try {
+            const user = req.user;
+
             const doc = await applyPopulateSingleAuthor(
-                Song.findById(req.params.id).populate("songTypeId", "name order")
+                Song.findById(req.params.id).populate('songTypeId', 'name order')
             );
 
             if (!doc) {
-                res.status(404).json({ message: "Song not found" });
+                res.status(404).json({ message: 'Song not found' });
                 return;
             }
 
-            const song = normalizeSong(doc);
+            const songObj = normalizeSong(doc);
 
-            res.json(song);
+            if (
+                user?.role !== 'SUPER_ADMIN' &&
+                user?.choirId &&
+                songObj.choirId &&
+                songObj.choirId.toString() !== user.choirId.toString()
+            ) {
+                res.status(404).json({ message: 'Song not found' });
+                return;
+            }
+
+            res.json(songObj);
         } catch (error: any) {
-            console.error("Error retrieving song:", error);
+            console.error('Error retrieving song:', error);
             res.status(500).json({
-                message: "Error retrieving song",
+                message: 'Error retrieving song',
                 error: error.message
             });
         }
     }
 );
 
-// UPDATE
+// UPDATE 
 router.put(
-    "/:id",
+    '/:id',
     verifyToken,
-    uploadSongAudio.single("file"),
+    uploadSongAudio.single('file'),
     setUpdatedBy,
     async (req: RequestWithUser, res: Response): Promise<void> => {
         try {
             const { id } = req.params;
             const body = parseBody(req);
+            const user = req.user;
 
             const { title, content, composer, songTypeId } = body;
 
             const song = await Song.findById(id);
             if (!song) {
-                res.status(404).json({ message: "Song not found" });
+                res.status(404).json({ message: 'Song not found' });
                 return;
+            }
+
+            if (
+                user?.role !== 'SUPER_ADMIN' &&
+                user?.choirId &&
+                song.choirId &&
+                song.choirId.toString() !== user.choirId.toString()
+            ) {
+                res.status(404).json({ message: 'Song not found' });
+                return;
+            }
+
+            if (user?.role === 'SUPER_ADMIN') {
+                if (body.choirId) {
+                    song.choirId = body.choirId;
+                } else if (body.choirKey) {
+                    const resolved = await resolveChoirIdFromKey(body.choirKey);
+                    if (resolved) {
+                        song.choirId = resolved as any;
+                    }
+                }
             }
 
             if (req.file) {
@@ -224,36 +341,49 @@ router.put(
 
             await registerLog({
                 req: req as any,
-                collection: "Songs",
-                action: "update",
+                collection: 'Songs',
+                action: 'update',
                 referenceId: song.id.toString(),
-                changes: { updated: song }
+                changes: { updated: song.toJSON() }
             });
 
             const reloaded = await Song.findById(song.id)
-                .populate("songTypeId", "name order")
-                .populate("createdBy", "name username")
-                .populate("updatedBy", "name username");
+                .populate('songTypeId', 'name order')
+                .populate('createdBy', 'name username')
+                .populate('updatedBy', 'name username');
 
             res.json(normalizeSong(reloaded));
         } catch (error: any) {
-            console.error("Error updating song:", error);
-            res
-                .status(500)
-                .json({ message: "Error updating song", error: error.message });
+            console.error('Error updating song:', error);
+            res.status(500).json({
+                message: 'Error updating song',
+                error: error.message
+            });
         }
     }
 );
 
-// DELETE
+// DELETE 
 router.delete(
-    "/:id",
+    '/:id',
     verifyToken,
     async (req: RequestWithUser, res: Response): Promise<void> => {
         try {
+            const user = req.user;
             const song = await Song.findById(req.params.id);
+
             if (!song) {
-                res.status(404).json({ message: "Song not found" });
+                res.status(404).json({ message: 'Song not found' });
+                return;
+            }
+
+            if (
+                user?.role !== 'SUPER_ADMIN' &&
+                user?.choirId &&
+                song.choirId &&
+                song.choirId.toString() !== user.choirId.toString()
+            ) {
+                res.status(404).json({ message: 'Song not found' });
                 return;
             }
 
@@ -261,15 +391,15 @@ router.delete(
 
             await registerLog({
                 req: req as any,
-                collection: "Songs",
-                action: "delete",
+                collection: 'Songs',
+                action: 'delete',
                 referenceId: song.id.toString(),
-                changes: { deleted: song }
+                changes: { deleted: song.toJSON() }
             });
 
-            res.json({ message: "Song deleted successfully" });
+            res.json({ message: 'Song deleted successfully' });
         } catch (error: any) {
-            console.error("Error deleting song:", error);
+            console.error('Error deleting song:', error);
             res.status(500).json({ message: error.message });
         }
     }

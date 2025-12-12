@@ -1,8 +1,11 @@
 import express, { NextFunction, Request, Response } from 'express';
-import verifyToken, { RequestWithUser } from '../middlewares/auth';
+import { Types } from 'mongoose';
 import { v2 as cloudinary } from 'cloudinary';
-import { uploadGalleryImage } from '../middlewares/cloudinaryStorage';
+
+import verifyToken, { RequestWithUser } from '../middlewares/auth';
+import { uploadGalleryImage, deleteFromCloudinary } from '../middlewares/cloudinaryStorage';
 import GalleryImage from '../models/GalleryImage';
+import Choir from '../models/Choir';
 import { setUpdatedBy, setCreatedBy } from '../utils/setCreatedBy';
 import { applyPopulateSingleAuthor } from '../utils/populateHelpers';
 import { registerLog } from '../utils/logger';
@@ -15,26 +18,95 @@ const parseBody = (req: Request) => {
         try {
             body = JSON.parse(req.body.data);
         } catch (e) {
-            console.error("Error parsing JSON from mobile:", e);
+            console.error('Error parsing JSON from mobile:', e);
         }
     }
     return body;
 };
 
-// Public Route
-router.get(['/', '/public'], async (req: Request, res: Response) => {
+/**
+ * Resolve choirId from:
+ * - direct ObjectId
+ * - choir code
+ * - choir name
+ */
+const resolveChoirIdFromKey = async (choirKey?: string | null): Promise<string | null> => {
+    if (!choirKey) return null;
+
+    if (Types.ObjectId.isValid(choirKey)) {
+        return choirKey;
+    }
+
+    const choir = await Choir.findOne({
+        $or: [{ code: choirKey }, { name: choirKey }]
+    }).select('_id');
+
+    // Use .id (virtual) to avoid TS complaints on _id
+    return choir ? (choir as any).id : null;
+};
+
+/**
+ * Build public filter:
+ *  - ?choirId= (query)
+ *  - /public/:choirKey (id, code or name)
+ */
+const buildPublicFilter = async (req: Request): Promise<any> => {
+    const { choirId } = req.query;
+    const choirKeyParam = (req.params as any).choirKey as string | undefined;
+
+    const filter: any = {};
+
+    const resolvedChoirId =
+        (choirId && typeof choirId === 'string')
+            ? choirId
+            : (choirKeyParam ? await resolveChoirIdFromKey(choirKeyParam) : null);
+
+    if (resolvedChoirId) {
+        filter.choirId = resolvedChoirId;
+    }
+
+    return filter;
+};
+
+// PUBLIC LIST (base) - /gallery/public?choirId=...
+router.get(['/public'], async (req: Request, res: Response) => {
     try {
-        const images = await GalleryImage.find().sort({ createdAt: -1 });
-        res.json(images);
-    } catch (error) {
+        const filter = await buildPublicFilter(req);
+
+        const images = await GalleryImage.find(filter).sort({ createdAt: -1 });
+        res.json(images.map(img => img.toJSON()));
+    } catch (error: any) {
         res.status(500).json({ message: 'Error retrieving public gallery images' });
     }
 });
 
-// Create
-router.post('/',
+// PUBLIC LIST by choirKey - /gallery/public/:choirKey
+router.get('/public/:choirKey', async (req: Request, res: Response) => {
+    try {
+        const filter = await buildPublicFilter(req);
+
+        const images = await GalleryImage.find(filter).sort({ createdAt: -1 });
+        res.json(images.map(img => img.toJSON()));
+    } catch (error: any) {
+        res.status(500).json({ message: 'Error retrieving public gallery images' });
+    }
+});
+
+router.get('/', async (req: Request, res: Response) => {
+    try {
+        const filter = await buildPublicFilter(req);
+        const images = await GalleryImage.find(filter).sort({ createdAt: -1 });
+        res.json(images.map(img => img.toJSON()));
+    } catch (error: any) {
+        res.status(500).json({ message: 'Error retrieving public gallery images' });
+    }
+});
+
+// CREATE (scoped to req.user.choirId)
+router.post(
+    '/',
     verifyToken,
-    uploadGalleryImage.single('file'), // Standard field name: 'file'
+    uploadGalleryImage.single('file'),
     setCreatedBy,
     async (req: RequestWithUser, res: Response): Promise<void> => {
         try {
@@ -46,19 +118,29 @@ router.post('/',
             const body = parseBody(req);
             const mimetype = req.file.mimetype || '';
 
-            // Robust Video Detection
-            const isVideo = mimetype.startsWith('video') ||
+            const isVideo =
+                mimetype.startsWith('video') ||
                 mimetype.includes('mp4') ||
                 mimetype.includes('mov') ||
                 mimetype.includes('quicktime');
 
             const mediaType = isVideo ? 'VIDEO' : 'IMAGE';
-
             const { title, description } = body;
 
-            const isGalleryImage = body.imageGallery === true || String(body.imageGallery) === 'true';
+            const choirId = req.user?.choirId;
+            if (!choirId) {
+                res.status(400).json({ message: 'Missing choirId in user token' });
+                return;
+            }
 
-            console.log("📂 File Uploaded:", { filename: req.file.filename, mimetype, detectedType: mediaType });
+            const isGalleryImage =
+                body.imageGallery === true || String(body.imageGallery) === 'true';
+
+            console.log('📂 File Uploaded:', {
+                filename: req.file.filename,
+                mimetype,
+                detectedType: mediaType
+            });
 
             const newImage = new GalleryImage({
                 title,
@@ -68,7 +150,6 @@ router.post('/',
                 imagePublicId: req.file.filename,
                 imageGallery: isGalleryImage,
 
-                // Boolean Flags
                 imageStart: String(body.imageStart) === 'true',
                 imageTopBar: String(body.imageTopBar) === 'true',
                 imageUs: String(body.imageUs) === 'true',
@@ -76,37 +157,40 @@ router.post('/',
                 imageLeftMenu: String(body.imageLeftMenu) === 'true',
                 imageRightMenu: String(body.imageRightMenu) === 'true',
 
+                choirId,
                 createdBy: req.body.createdBy
             });
 
             await newImage.save();
 
-            if (!newImage._id) return;
-
             await registerLog({
                 req: req as any,
                 collection: 'GalleryImages',
                 action: 'create',
-                referenceId: newImage._id.toString(),
-                changes: { new: newImage }
+                referenceId: newImage.id.toString(),
+                changes: { new: newImage.toJSON() }
             });
 
-            res.status(200).json({ message: 'File uploaded successfully', image: newImage });
+            res.status(200).json({
+                message: 'File uploaded successfully',
+                image: newImage.toJSON()
+            });
         } catch (err: any) {
-            console.error("Server Error:", err);
+            console.error('Server Error:', err);
             res.status(400).json({ message: err.message });
         }
     }
 );
 
-// UPDATE
-router.put('/:id',
+// UPDATE (choir-scoped)
+router.put(
+    '/:id',
     verifyToken,
     uploadGalleryImage.single('file'),
     setUpdatedBy,
     async (req: RequestWithUser, res: Response): Promise<void> => {
         try {
-            const body = parseBody(req); // Reuse your existing helper
+            const body = parseBody(req);
             const { title, description } = body;
 
             const image = await GalleryImage.findById(req.params.id);
@@ -115,15 +199,21 @@ router.put('/:id',
                 return;
             }
 
-            // 1. Handle File Replacement
+            const user = req.user;
+            if (user?.role !== 'SUPER_ADMIN' && user?.choirId && image.choirId) {
+                if (image.choirId.toString() !== user.choirId.toString()) {
+                    res.status(404).json({ message: 'Image not found' });
+                    return;
+                }
+            }
+
+            // File Replacement
             if (req.file) {
-                // Delete old image from Cloudinary
                 if (image.imagePublicId) {
                     const resourceType = image.mediaType === 'VIDEO' ? 'video' : 'image';
-                    await cloudinary.uploader.destroy(image.imagePublicId, { resource_type: resourceType });
+                    await deleteFromCloudinary(image.imagePublicId, resourceType);
                 }
 
-                // Detect new media type
                 const mimetype = req.file.mimetype || '';
                 const isVideo = mimetype.startsWith('video') || mimetype.includes('mp4');
 
@@ -132,7 +222,6 @@ router.put('/:id',
                 image.mediaType = isVideo ? 'VIDEO' : 'IMAGE';
             }
 
-            // 2. Update Text Fields
             if (title) image.title = title;
             if (description !== undefined) image.description = description;
 
@@ -140,38 +229,54 @@ router.put('/:id',
 
             await image.save();
 
-            // Log change
             await registerLog({
                 req: req as any,
                 collection: 'GalleryImages',
                 action: 'update',
                 referenceId: image.id.toString(),
-                changes: { updated: image }
+                changes: { updated: image.toJSON() }
             });
 
-            res.json({ message: 'Image updated successfully', image });
+            res.json({
+                message: 'Image updated successfully',
+                image: image.toJSON()
+            });
         } catch (err: any) {
             res.status(500).json({ message: err.message });
         }
     }
 );
 
-// Get One
-router.get('/:id', verifyToken, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+// GET ONE (protected, choir-scoped)
+router.get('/:id', verifyToken, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
-        const image = await applyPopulateSingleAuthor(GalleryImage.findById(req.params.id));
+        const user = req.user;
+        const image = await applyPopulateSingleAuthor(
+            GalleryImage.findById(req.params.id)
+        );
+
         if (!image) {
             res.status(404).json({ message: 'Image not found' });
             return;
         }
-        res.json(image);
+
+        const imgDoc: any = image;
+
+        if (user?.role !== 'SUPER_ADMIN' && user?.choirId && imgDoc.choirId) {
+            if (imgDoc.choirId.toString() !== user.choirId.toString()) {
+                res.status(404).json({ message: 'Image not found' });
+                return;
+            }
+        }
+
+        res.json(imgDoc.toJSON ? imgDoc.toJSON() : imgDoc);
     } catch (err: any) {
         res.status(500).json({ message: err.message });
     }
 });
 
-// Delete
-router.delete('/:id', verifyToken, async (req: RequestWithUser, res: Response, next: NextFunction): Promise<void> => {
+// DELETE (choir-scoped)
+router.delete('/:id', verifyToken, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
         const image = await GalleryImage.findById(req.params.id);
         if (!image) {
@@ -179,9 +284,17 @@ router.delete('/:id', verifyToken, async (req: RequestWithUser, res: Response, n
             return;
         }
 
+        const user = req.user;
+        if (user?.role !== 'SUPER_ADMIN' && user?.choirId && image.choirId) {
+            if (image.choirId.toString() !== user.choirId.toString()) {
+                res.status(404).json({ message: 'Image not found' });
+                return;
+            }
+        }
+
         if (image.imagePublicId) {
             const resourceType = image.mediaType === 'VIDEO' ? 'video' : 'image';
-            await cloudinary.uploader.destroy(image.imagePublicId, { resource_type: resourceType });
+            await deleteFromCloudinary(image.imagePublicId, resourceType);
         }
 
         await GalleryImage.findByIdAndDelete(req.params.id);
@@ -191,7 +304,7 @@ router.delete('/:id', verifyToken, async (req: RequestWithUser, res: Response, n
             collection: 'GalleryImages',
             action: 'delete',
             referenceId: image.id.toString(),
-            changes: { deleted: image }
+            changes: { deleted: image.toJSON() }
         });
 
         res.json({ message: 'Image deleted successfully' });
@@ -200,76 +313,232 @@ router.delete('/:id', verifyToken, async (req: RequestWithUser, res: Response, n
     }
 });
 
-// Patch Flags
-router.patch('/mark/:field/:id', setUpdatedBy, async (req: RequestWithUser, res: Response, next: NextFunction): Promise<void> => {
-    const field = req.params.field;
-    const id = req.params.id.trim();
+// PATCH FLAGS (single-slot flags, choir-scoped)
+// router.patch(
+//     '/mark/:field/:id',
+//     verifyToken,
+//     setUpdatedBy,
+//     async (req: RequestWithUser, res: Response): Promise<void> => {
+//         const field = req.params.field;
+//         const id = req.params.id.trim();
 
-    try {
-        const validFields = [
-            'imageStart', 'imageTopBar', 'imageUs', 'imageLogo', 'imageGallery', 'imageLeftMenu', 'imageRightMenu'
-        ];
+//         try {
+//             const validFields = [
+//                 'imageStart',
+//                 'imageTopBar',
+//                 'imageUs',
+//                 'imageLogo',
+//                 'imageGallery',
+//                 'imageLeftMenu',
+//                 'imageRightMenu'
+//             ];
 
-        if (!validFields.includes(field)) {
-            res.status(400).json({ message: 'Invalid field' });
+//             if (!validFields.includes(field)) {
+//                 res.status(400).json({ message: 'Invalid field' });
+//                 return;
+//             }
+
+//             const image = await GalleryImage.findById(id);
+//             if (!image) {
+//                 res.status(404).json({ message: 'Image not found' });
+//                 return;
+//             }
+
+//             const user = req.user;
+//             if (user?.role !== 'SUPER_ADMIN' && user?.choirId && image.choirId) {
+//                 if (image.choirId.toString() !== user.choirId.toString()) {
+//                     res.status(404).json({ message: 'Image not found' });
+//                     return;
+//                 }
+//             }
+
+//             const choirId = image.choirId;
+
+//             const update: Partial<Record<string, boolean>> = {};
+//             update[field] = true;
+
+//             // Mutual exclusivity per choir (except gallery)
+//             if (field !== 'imageGallery') {
+//                 await GalleryImage.updateMany(
+//                     {
+//                         [field]: true,
+//                         ...(choirId ? { choirId } : {})
+//                     },
+//                     { $set: { [field]: false } }
+//                 );
+//             }
+
+//             const updatedImage = await GalleryImage.findByIdAndUpdate(
+//                 id,
+//                 { $set: update },
+//                 { new: true }
+//             );
+
+//             if (!updatedImage) {
+//                 res.status(404).json({ message: 'Image not found after update' });
+//                 return;
+//             }
+
+//             await registerLog({
+//                 req: req as any,
+//                 collection: 'GalleryImages',
+//                 action: 'update',
+//                 referenceId: updatedImage.id.toString(),
+//                 changes: { after: updatedImage.toJSON() }
+//             });
+
+//             res.json({
+//                 message: `Field ${field} updated`,
+//                 image: updatedImage.toJSON()
+//             });
+//         } catch (err: any) {
+//             res.status(500).json({ message: (err as Error).message });
+//         }
+//     }
+// );
+router.patch(
+    '/mark/:field/:id',
+    verifyToken,
+    setUpdatedBy,
+    async (req: RequestWithUser, res: Response): Promise<void> => {
+        try {
+            const field = req.params.field;
+            const id = req.params.id.trim();
+            const user = req.user;
+
+            const validFields = [
+                'imageStart',
+                'imageTopBar',
+                'imageUs',
+                'imageLogo',
+                'imageGallery',
+                'imageLeftMenu',
+                'imageRightMenu'
+            ];
+
+            if (!validFields.includes(field)) {
+                res.status(400).json({ message: 'Invalid field' });
+                return;
+            }
+
+            const image = await GalleryImage.findById(id);
+            if (!image) {
+                res.status(404).json({ message: 'Image not found' });
+                return;
+            }
+
+            // Choir scoping (SUPER_ADMIN bypasses)
+            if (user?.role !== 'SUPER_ADMIN') {
+                if (!user?.choirId || image.choirId.toString() !== user.choirId.toString()) {
+                    res.status(404).json({ message: 'Image not found' });
+                    return;
+                }
+            }
+
+            const choirId = image.choirId;
+
+            // Prepare update document
+            const update: Record<string, any> = {
+                [field]: true,
+                updatedBy: user?.id ?? null
+            };
+
+            // Mutually exclusive flags (except gallery which allows multi)
+            if (field !== 'imageGallery') {
+                await GalleryImage.updateMany(
+                    {
+                        [field]: true,
+                        choirId
+                    },
+                    {
+                        $set: { [field]: false }
+                    }
+                );
+            }
+
+            const updatedImage = await GalleryImage.findByIdAndUpdate(
+                id,
+                { $set: update },
+                { new: true }
+            );
+
+            if (!updatedImage) {
+                res
+                    .status(404)
+                    .json({ message: 'Image not found after update attempt' });
+                return;
+            }
+
+            // Log activity
+            await registerLog({
+                req: req as any,
+                collection: 'GalleryImages',
+                action: 'update',
+                referenceId: updatedImage.id.toString(),
+                changes: { after: updatedImage.toJSON() }
+            });
+
+            res.json({
+                message: `Field ${field} updated`,
+                image: updatedImage.toJSON()
+            });
+        } catch (err: any) {
+            console.error('PATCH /gallery/mark error:', err);
+            res.status(500).json({ message: err.message });
+        }
+    }
+);
+
+// PATCH imageGallery toggle (choir-scoped)
+router.patch(
+    '/mark/imageGallery/:id',
+    verifyToken,
+    setUpdatedBy,
+    async (req: RequestWithUser, res: Response): Promise<void> => {
+        const id = req.params.id.trim();
+        const { value } = req.body;
+
+        if (typeof value !== 'boolean') {
+            res.status(400).json({ message: 'Value must be boolean' });
             return;
         }
 
-        const update: Partial<Record<string, boolean>> = {};
-        update[field] = true;
+        try {
+            const image = await GalleryImage.findById(id);
+            if (!image) {
+                res.status(404).json({ message: 'Image not found' });
+                return;
+            }
 
-        // Mutual exclusivity for flags other than gallery
-        if (field !== 'imageGallery') {
-            await GalleryImage.updateMany({ [field]: true }, { $set: { [field]: false } });
+            const user = req.user;
+            if (user?.role !== 'SUPER_ADMIN' && user?.choirId && image.choirId) {
+                if (image.choirId.toString() !== user.choirId.toString()) {
+                    res.status(404).json({ message: 'Image not found' });
+                    return;
+                }
+            }
+
+            image.imageGallery = value;
+            image.updatedBy = req.body.updatedBy;
+
+            await image.save();
+
+            await registerLog({
+                req: req as any,
+                collection: 'GalleryImages',
+                action: 'update',
+                referenceId: image.id.toString(),
+                changes: { updated: image.toJSON() }
+            });
+
+            res.json({
+                message: `Field imageGallery updated to ${value}`,
+                image: image.toJSON()
+            });
+        } catch (err: any) {
+            res.status(500).json({ message: (err as Error).message });
         }
-
-        const updatedImage = await GalleryImage.findByIdAndUpdate(id, { $set: update }, { new: true });
-
-        if (!updatedImage) return;
-
-        await registerLog({
-            req: req as any,
-            collection: 'GalleryImages',
-            action: 'update',
-            referenceId: updatedImage.id.toString(),
-            changes: { after: updatedImage }
-        });
-
-        res.json({ message: `Field ${field} updated`, image: updatedImage });
-    } catch (err: any) {
-        res.status(500).json({ message: (err as Error).message });
     }
-});
-
-// Patch Gallery Toggle
-router.patch('/mark/imageGallery/:id', setUpdatedBy, async (req: RequestWithUser, res: Response, next: NextFunction): Promise<void> => {
-    const id = req.params.id.trim();
-    const { value } = req.body;
-
-    if (typeof value !== 'boolean') {
-        res.status(400).json({ message: 'Value must be boolean' });
-        return;
-    }
-
-    try {
-        const updatedImage = await GalleryImage.findByIdAndUpdate(
-            id,
-            { $set: { imageGallery: value } },
-            { new: true }
-        );
-
-        if (!updatedImage) {
-            res.status(404).json({ message: 'Image not found' });
-            return;
-        }
-
-        res.json({
-            message: `Field imageGallery updated to ${value}`,
-            image: updatedImage,
-        });
-    } catch (err: any) {
-        res.status(500).json({ message: (err as Error).message });
-    }
-});
+);
 
 export default router;

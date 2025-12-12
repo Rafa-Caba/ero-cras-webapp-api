@@ -9,6 +9,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { configuringSockets } from './socket';
 
 import authRoutes from './routes/auth';
+import choirsRouter from './routes/choirs';
 import userRoutes from './routes/user';
 import songRoutes from './routes/song';
 import songTypeRoutes from './routes/songType';
@@ -20,9 +21,11 @@ import settingsRoutes from './routes/setting';
 import logRoutes from './routes/log';
 import themeRoutes from './routes/theme';
 import chatRoutes from './routes/chat';
+import instrumentsRouter from './routes/instruments';
 
 import { ensureSettingsExists } from './utils/initSettings';
 import { createDefaultThemes } from './utils/initialThemes';
+import { ensureDefaultChoir } from './bootstrap/createDefaultChoir';
 
 export const app: Application = express();
 
@@ -66,6 +69,7 @@ app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
 app.use('/api/auth', authRoutes);
+app.use('/api/choirs', choirsRouter);
 app.use('/api/users', userRoutes);
 app.use('/api/songs', songRoutes);
 app.use('/api/song-types', songTypeRoutes);
@@ -77,6 +81,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/logs', logRoutes);
 app.use('/api/themes', themeRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/instruments', instrumentsRouter);
 
 app.use((req: Request, res: Response) => {
     res.status(404).json({
@@ -93,8 +98,9 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 
 mongoose.connect(MONGO_URI)
     .then(async () => {
+        const defaultChoirId = await ensureDefaultChoir();
         await ensureSettingsExists();
-        await createDefaultThemes();
+        await createDefaultThemes(defaultChoirId);
 
         const httpServer = http.createServer(app);
 

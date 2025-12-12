@@ -1,7 +1,10 @@
 import express, { Request, Response } from 'express';
 import { v2 as cloudinary } from 'cloudinary';
+import { Types } from 'mongoose';
+
 import { uploadAnnouncementImage } from '../middlewares/cloudinaryStorage';
 import Announcement from '../models/Announcement';
+import Choir from '../models/Choir';
 import verifyToken, { RequestWithUser } from '../middlewares/auth';
 import { setUpdatedBy, setCreatedBy } from '../utils/setCreatedBy';
 import { applyPopulateAuthors } from '../utils/populateHelpers';
@@ -16,58 +19,145 @@ const parseBody = (req: Request) => {
         try {
             body = JSON.parse(req.body.data);
         } catch (e) {
-            console.error("Error parsing JSON from mobile:", e);
+            console.error('Error parsing JSON from mobile:', e);
         }
     }
     return body;
 };
 
-// Public Endpoint
-router.get('/public', async (_req: Request, res: Response) => {
+/**
+ * Helper: Resolve choirId from a key that may be:
+ * - ObjectId string
+ * - choir code
+ * - choir name
+ */
+const resolveChoirIdFromKey = async (choirKey?: string | null): Promise<string | null> => {
+    if (!choirKey) return null;
+
+    // Direct ObjectId
+    if (Types.ObjectId.isValid(choirKey)) {
+        return choirKey;
+    }
+
+    const choir = await Choir.findOne({
+        $or: [{ code: choirKey }, { name: choirKey }]
+    }).select('_id');
+
+    // Use .id (mongoose virtual) to avoid TS "unknown" on _id
+    return choir ? (choir as any).id : null;
+};
+
+/**
+ * Helper: Build public filter for announcements
+ * Priority:
+ *  - query ?choirId=
+ *  - param :choirKey (id, code or name)
+ */
+const buildPublicFilter = async (req: Request): Promise<any> => {
+    const { choirId } = req.query;
+    const choirKeyParam = (req.params as any).choirKey as string | undefined;
+
+    const filter: any = { isPublic: true };
+
+    const resolvedChoirId =
+        (choirId && typeof choirId === 'string')
+            ? choirId
+            : (choirKeyParam ? await resolveChoirIdFromKey(choirKeyParam) : null);
+
+    if (resolvedChoirId) {
+        filter.choirId = resolvedChoirId;
+    }
+
+    return filter;
+};
+
+// Public Endpoint (base, optional ?choirId=)
+router.get('/public', async (req: Request, res: Response) => {
     try {
-        const announcements = await Announcement.find({ isPublic: true })
+        const filter = await buildPublicFilter(req);
+
+        const announcements = await Announcement.find(filter)
             .sort({ createdAt: -1 })
             .populate('createdBy', 'name username');
 
-        res.json(announcements);
+        res.json(announcements.map(a => a.toJSON()));
     } catch (error: any) {
         res.status(500).json({ message: 'Error retrieving public announcements' });
     }
 });
 
-// Admin Endpoint
-router.get('/admin', verifyToken, async (req: Request, res: Response) => {
+// Public Endpoint with choirKey: /public/:choirKey
+router.get('/public/:choirKey', async (req: Request, res: Response) => {
     try {
-        const announcements = await applyPopulateAuthors(Announcement.find().sort({ createdAt: -1 }));
-        res.json(announcements);
+        const filter = await buildPublicFilter(req);
+
+        const announcements = await Announcement.find(filter)
+            .sort({ createdAt: -1 })
+            .populate('createdBy', 'name username');
+
+        res.json(announcements.map(a => a.toJSON()));
+    } catch (error: any) {
+        res.status(500).json({ message: 'Error retrieving public announcements' });
+    }
+});
+
+// 🔐 Admin Endpoint (scoped by choirId for non-SUPER_ADMIN)
+router.get('/admin', verifyToken, async (req: RequestWithUser, res: Response) => {
+    try {
+        const user = req.user;
+        const query: any = {};
+
+        if (user?.role !== 'SUPER_ADMIN') {
+            if (user?.choirId) {
+                query.choirId = user.choirId;
+            }
+        } else if (req.query.choirId) {
+            query.choirId = req.query.choirId;
+        }
+
+        const announcementsQuery = Announcement.find(query).sort({ createdAt: -1 });
+        const announcements = await applyPopulateAuthors(announcementsQuery);
+
+        res.json(announcements.map((a: any) => a.toJSON()));
     } catch (error: any) {
         res.status(500).json({ message: 'Error retrieving admin announcements' });
     }
 });
 
-// GET ONE
-router.get('/:id', verifyToken, async (req: Request, res: Response): Promise<void> => {
+// 🔐 GET ONE (protected, choir-scoped)
+router.get('/:id', verifyToken, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
+        const user = req.user;
         const announcement = await Announcement.findById(req.params.id);
+
         if (!announcement) {
             res.status(404).json({ message: 'Announcement not found' });
             return;
         }
-        res.json(announcement);
+
+        // Choir scoping: non-SUPER_ADMIN only sees their choir
+        if (user?.role !== 'SUPER_ADMIN' && user?.choirId && announcement.choirId) {
+            if (announcement.choirId.toString() !== user.choirId.toString()) {
+                res.status(404).json({ message: 'Announcement not found' });
+                return;
+            }
+        }
+
+        res.json(announcement.toJSON());
     } catch (error: any) {
         res.status(500).json({ message: error.message });
     }
 });
 
-// Create
-router.post('/',
+// 🔐 Create
+router.post(
+    '/',
     verifyToken,
-    uploadAnnouncementImage.single('file'), // Standard field name: 'file'
+    uploadAnnouncementImage.single('file'),
     setCreatedBy,
     async (req: RequestWithUser, res: Response): Promise<void> => {
         try {
             const body = parseBody(req);
-
             const { title, content } = body;
 
             const isPublic = body.isPublic === 'true' || body.isPublic === true;
@@ -77,12 +167,15 @@ router.post('/',
                 return;
             }
 
+            const choirId = req.user?.choirId || null;
+
             const newAnnouncement = new Announcement({
                 title,
                 content,
                 isPublic,
                 imageUrl: req.file?.path || '',
                 imagePublicId: req.file?.filename || null,
+                choirId,
                 createdBy: req.body.createdBy
             });
 
@@ -91,31 +184,42 @@ router.post('/',
             if (isPublic) {
                 notifyCommunity(
                     req.user?.id,
-                    'Admin',
+                    req.user?.username || 'Admin',
                     'ANNOUNCEMENT',
                     newAnnouncement
                 );
             }
 
-            if (!newAnnouncement._id) return;
+            if (!newAnnouncement.id) {
+                res.status(201).json({
+                    message: 'Announcement created successfully',
+                    announcement: newAnnouncement.toJSON()
+                });
+                return;
+            }
 
             await registerLog({
                 req: req as any,
                 collection: 'Announcements',
                 action: 'create',
-                referenceId: newAnnouncement._id.toString(),
-                changes: { new: newAnnouncement }
+                referenceId: newAnnouncement.id.toString(),
+                changes: { new: newAnnouncement.toJSON() }
             });
 
-            res.status(201).json({ message: 'Announcement created successfully', announcement: newAnnouncement });
-        } catch (error) {
+            res.status(201).json({
+                message: 'Announcement created successfully',
+                announcement: newAnnouncement.toJSON()
+            });
+        } catch (error: any) {
             console.error(error);
             res.status(500).json({ message: 'Error creating announcement' });
         }
-    });
+    }
+);
 
-// Update
-router.put('/:id',
+// 🔐 Update
+router.put(
+    '/:id',
     verifyToken,
     uploadAnnouncementImage.single('file'),
     setUpdatedBy,
@@ -132,6 +236,16 @@ router.put('/:id',
                 return;
             }
 
+            const user = req.user;
+
+            // Choir scoping
+            if (user?.role !== 'SUPER_ADMIN' && user?.choirId && announcement.choirId) {
+                if (announcement.choirId.toString() !== user.choirId.toString()) {
+                    res.status(404).json({ message: 'Announcement not found' });
+                    return;
+                }
+            }
+
             if (req.file) {
                 if (announcement.imagePublicId) {
                     await cloudinary.uploader.destroy(announcement.imagePublicId);
@@ -140,23 +254,23 @@ router.put('/:id',
                 announcement.imagePublicId = req.file.filename;
             }
 
-            let isPublic = false;
+            let isPublicFlag = announcement.isPublic;
 
             if (title) announcement.title = title;
             if (content) announcement.content = content;
             if (body.isPublic !== undefined) {
-                isPublic = body.isPublic === 'true' || body.isPublic === true;
-                announcement.isPublic = isPublic;
+                isPublicFlag = body.isPublic === 'true' || body.isPublic === true;
+                announcement.isPublic = isPublicFlag;
             }
 
             announcement.updatedBy = req.body.updatedBy;
 
             await announcement.save();
 
-            if (isPublic) {
+            if (isPublicFlag) {
                 notifyCommunity(
                     req.user?.id,
-                    'Admin',
+                    req.user?.username || 'Admin',
                     'ANNOUNCEMENT',
                     announcement
                 );
@@ -167,23 +281,32 @@ router.put('/:id',
                 collection: 'Announcements',
                 action: 'update',
                 referenceId: announcement.id.toString(),
-                changes: { updated: announcement }
+                changes: { updated: announcement.toJSON() }
             });
 
-            res.json(announcement);
-        } catch (error) {
+            res.json(announcement.toJSON());
+        } catch (error: any) {
             console.error('Error updating announcement:', error);
             res.status(500).json({ message: 'Error updating announcement' });
         }
-    });
+    }
+);
 
-// Delete
+// 🔐 Delete
 router.delete('/:id', verifyToken, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
         const announcement = await Announcement.findById(req.params.id);
         if (!announcement) {
             res.status(404).json({ message: 'Announcement not found' });
             return;
+        }
+
+        const user = req.user;
+        if (user?.role !== 'SUPER_ADMIN' && user?.choirId && announcement.choirId) {
+            if (announcement.choirId.toString() !== user.choirId.toString()) {
+                res.status(404).json({ message: 'Announcement not found' });
+                return;
+            }
         }
 
         if (announcement.imagePublicId) {
@@ -197,11 +320,11 @@ router.delete('/:id', verifyToken, async (req: RequestWithUser, res: Response): 
             collection: 'Announcements',
             action: 'delete',
             referenceId: announcement.id.toString(),
-            changes: { deleted: announcement }
+            changes: { deleted: announcement.toJSON() }
         });
 
         res.json({ message: 'Announcement deleted successfully' });
-    } catch (error) {
+    } catch (error: any) {
         res.status(500).json({ message: 'Error deleting announcement' });
     }
 });

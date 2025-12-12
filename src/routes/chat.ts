@@ -15,12 +15,21 @@ import { notifyCommunity } from '../utils/notificationHelper';
 
 const router = express.Router();
 
+// Helper to build choir room name
+const getChoirRoom = (choirId: string | null | undefined) =>
+    `choir:${choirId || 'global'}`;
+
 // GET HISTORY
-router.get(['/', '/history'], verifyToken, async (req: Request, res: Response): Promise<void> => {
+router.get(['/', '/history'], verifyToken, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
         const { limit = 50, before } = req.query;
 
         const query: any = {};
+
+        if (req.user?.choirId) {
+            query.choirId = req.user.choirId;
+        }
+
         if (before) {
             query.createdAt = { $lt: new Date(before as string) };
         }
@@ -53,8 +62,11 @@ router.post('/', verifyToken, setCreatedBy, async (req: RequestWithUser, res: Re
             return;
         }
 
+        const choirId = req.user?.choirId || null;
+
         const message = new ChatMessage({
             author,
+            choirId,
             content,
             type,
             fileUrl,
@@ -72,8 +84,12 @@ router.post('/', verifyToken, setCreatedBy, async (req: RequestWithUser, res: Re
             },
         ]);
 
-        if (req.app.get('io')) {
-            req.app.get('io').emit('new-message', message.toJSON());
+        const io = req.app.get('io');
+        if (io) {
+            const choirRoom = getChoirRoom(
+                (message.choirId as any)?.toString?.() || req.user?.choirId
+            );
+            io.to(choirRoom).emit('new-message', message.toJSON());
         }
 
         notifyCommunity(req.user?.id, req.user?.username || 'User', 'CHAT', message);
@@ -89,6 +105,7 @@ router.post('/upload-image', verifyToken, uploadChatImage.single('file'), setCre
     try {
         const { content, replyToId } = req.body;
         const author = req.body.author || req.body.createdBy;
+        const choirId = req.user?.choirId || null;
 
         if (!req.file) {
             res.status(400).json({ message: 'No image received' });
@@ -97,6 +114,7 @@ router.post('/upload-image', verifyToken, uploadChatImage.single('file'), setCre
 
         const message = new ChatMessage({
             author,
+            choirId,
             content: content ? JSON.parse(content) : {},
             type: 'IMAGE',
             fileUrl: req.file.path,
@@ -114,7 +132,13 @@ router.post('/upload-image', verifyToken, uploadChatImage.single('file'), setCre
             },
         ]);
 
-        if (req.app.get('io')) req.app.get('io').emit('new-message', message.toJSON());
+        const io = req.app.get('io');
+        if (io) {
+            const choirRoom = getChoirRoom(
+                (message.choirId as any)?.toString?.() || req.user?.choirId
+            );
+            io.to(choirRoom).emit('new-message', message.toJSON());
+        }
 
         notifyCommunity(req.user?.id, req.user?.username || 'User', 'CHAT', message);
 
@@ -128,12 +152,20 @@ router.post('/upload-image', verifyToken, uploadChatImage.single('file'), setCre
 router.post('/upload-file', verifyToken, uploadChatFile.single('file'), setCreatedBy, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
         const author = req.body.author || req.body.createdBy;
-        if (!req.file) { res.status(400).json({ message: 'No file received' }); return; }
+        const choirId = req.user?.choirId || null;
+
+        if (!req.file) {
+            res.status(400).json({ message: 'No file received' });
+            return;
+        }
 
         const result = await streamUpload(req.file.buffer, req.file.originalname, 'auto');
 
         const message = new ChatMessage({
-            author, content: {}, type: 'FILE',
+            author,
+            choirId,
+            content: {},
+            type: 'FILE',
             fileUrl: result.secure_url,
             filename: req.file.originalname,
             createdBy: req.body.createdBy,
@@ -148,7 +180,13 @@ router.post('/upload-file', verifyToken, uploadChatFile.single('file'), setCreat
             },
         ]);
 
-        if (req.app.get('io')) req.app.get('io').emit('new-message', message.toJSON());
+        const io = req.app.get('io');
+        if (io) {
+            const choirRoom = getChoirRoom(
+                (message.choirId as any)?.toString?.() || req.user?.choirId
+            );
+            io.to(choirRoom).emit('new-message', message.toJSON());
+        }
 
         notifyCommunity(req.user?.id, req.user?.username || 'User', 'CHAT', message);
 
@@ -162,15 +200,26 @@ router.post('/upload-file', verifyToken, uploadChatFile.single('file'), setCreat
 router.post('/upload-media', verifyToken, uploadChatMedia.single('file'), setCreatedBy, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
         const author = req.body.author || req.body.createdBy;
-        if (!req.file) { res.status(400).json({ message: 'No media received' }); return; }
-        if (!isValidMediaExtension(req.file.originalname)) { res.status(400).json({ message: 'Invalid extension' }); return; }
+        const choirId = req.user?.choirId || null;
+
+        if (!req.file) {
+            res.status(400).json({ message: 'No media received' });
+            return;
+        }
+        if (!isValidMediaExtension(req.file.originalname)) {
+            res.status(400).json({ message: 'Invalid extension' });
+            return;
+        }
 
         const mime = req.file.mimetype || '';
         const isVideo = mime.includes('video') || mime.includes('mp4') || mime.includes('mov');
         const type = isVideo ? 'VIDEO' : 'AUDIO';
 
         const message = new ChatMessage({
-            author, content: {}, type,
+            author,
+            choirId,
+            content: {},
+            type,
             fileUrl: req.file.path,
             filename: req.file.originalname,
             createdBy: req.body.createdBy,
@@ -185,7 +234,13 @@ router.post('/upload-media', verifyToken, uploadChatMedia.single('file'), setCre
             },
         ]);
 
-        if (req.app.get('io')) req.app.get('io').emit('new-message', message.toJSON());
+        const io = req.app.get('io');
+        if (io) {
+            const choirRoom = getChoirRoom(
+                (message.choirId as any)?.toString?.() || req.user?.choirId
+            );
+            io.to(choirRoom).emit('new-message', message.toJSON());
+        }
 
         notifyCommunity(req.user?.id, req.user?.username || 'User', 'CHAT', message);
 
@@ -213,7 +268,6 @@ router.patch('/:id/reaction', verifyToken, async (req: RequestWithUser, res: Res
             return;
         }
 
-        // 🔁 Toggle logic
         const existingIndex = message.reactions.findIndex(
             r => r.user.toString() === userId
         );
@@ -243,8 +297,12 @@ router.patch('/:id/reaction', verifyToken, async (req: RequestWithUser, res: Res
             },
         ]);
 
-        if (req.app.get('io')) {
-            req.app.get('io').emit('message-updated', message.toJSON());
+        const io = req.app.get('io');
+        if (io) {
+            const choirRoom = getChoirRoom(
+                (message.choirId as any)?.toString?.() || req.user?.choirId
+            );
+            io.to(choirRoom).emit('message-updated', message.toJSON());
         }
 
         res.json({ message });

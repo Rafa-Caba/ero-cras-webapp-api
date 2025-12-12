@@ -1,4 +1,4 @@
-import Theme from "../models/Theme";
+import Theme from '../models/Theme';
 
 const initialThemes = [
     {
@@ -45,23 +45,31 @@ const initialThemes = [
     }
 ];
 
-export const createDefaultThemes = async () => {
+export const createDefaultThemes = async (choirId?: string | null) => {
     try {
-        const existing = await Theme.find({ name: { $in: initialThemes.map(t => t.name) } });
+        const filter = {
+            name: { $in: initialThemes.map(t => t.name) },
+            choirId: choirId ?? null
+        };
+
+        const existing = await Theme.find(filter);
 
         if (existing.length === initialThemes.length) {
-            // console.log('🟡 All default themes exist.');
+            console.log('🟡 All default themes already exist for this choir.');
             return;
         }
 
         for (const theme of initialThemes) {
             const exists = existing.find(e => e.name === theme.name);
             if (!exists) {
-                await Theme.create(theme);
-                // console.log(`✅ Theme "${theme.name}" created.`);
+                await Theme.create({
+                    ...theme,
+                    choirId: choirId ?? null
+                });
+                console.log(`✅ Theme "${theme.name}" created for choirId=${choirId ?? 'null'}.`);
             }
         }
     } catch (error) {
-        console.error("Error creating default themes:", error);
+        console.error('Error creating default themes:', error);
     }
 };
