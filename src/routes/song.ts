@@ -75,7 +75,6 @@ const normalizeSong = (doc: any) => {
         obj.songTypeName = obj.songTypeName ?? '';
     }
 
-    // Normalize choirId to string (if populated)
     if (obj.choirId && typeof obj.choirId === 'object' && obj.choirId.toString) {
         obj.choirId = obj.choirId.toString();
     }
@@ -83,26 +82,67 @@ const normalizeSong = (doc: any) => {
     return obj;
 };
 
+const buildPublicFilter = async (req: Request): Promise<any> => {
+    const { choirId, choirKey } = req.query as {
+        choirId?: string;
+        choirKey?: string;
+    };
+    const choirKeyParam = (req.params as any).choirKey as string | undefined;
+
+    const filter: any = {};
+
+    let resolvedChoirId: string | null = null;
+
+    if (choirId) {
+        resolvedChoirId = choirId;
+    } else if (choirKey) {
+        resolvedChoirId = await resolveChoirIdFromKey(choirKey);
+    } else if (choirKeyParam) {
+        resolvedChoirId = await resolveChoirIdFromKey(choirKeyParam);
+    }
+
+    if (resolvedChoirId) {
+        filter.choirId = resolvedChoirId;
+    }
+
+    return filter;
+};
+
+const buildAdminFilter = async (req: RequestWithUser): Promise<any> => {
+    const user = req.user;
+    const { choirId, choirKey } = req.query as {
+        choirId?: string;
+        choirKey?: string;
+    };
+
+    const filter: any = {};
+
+    if (user?.role !== 'SUPER_ADMIN') {
+        if (user?.choirId) {
+            filter.choirId = user.choirId;
+        }
+    } else {
+        if (choirId) {
+            filter.choirId = choirId;
+        } else if (choirKey) {
+            const resolved = await resolveChoirIdFromKey(choirKey);
+            if (resolved) {
+                filter.choirId = resolved;
+            }
+        } else if (user?.choirId) {
+            filter.choirId = user.choirId;
+        }
+    }
+
+    return filter;
+};
+
 // PUBLIC ENDPOINT 
 router.get(
     '/public',
     async (req: Request, res: Response): Promise<void> => {
         try {
-            const { choirId, choirKey } = req.query as {
-                choirId?: string;
-                choirKey?: string;
-            };
-
-            const filter: any = {};
-
-            if (choirId) {
-                filter.choirId = choirId;
-            } else if (choirKey) {
-                const resolved = await resolveChoirIdFromKey(choirKey);
-                if (resolved) {
-                    filter.choirId = resolved;
-                }
-            }
+            const filter = await buildPublicFilter(req);
 
             const query = Song.find(filter)
                 .sort({ createdAt: -1 })
@@ -207,30 +247,7 @@ router.get(
     verifyToken,
     async (req: RequestWithUser, res: Response): Promise<void> => {
         try {
-            const user = req.user;
-            const { choirId, choirKey } = req.query as {
-                choirId?: string;
-                choirKey?: string;
-            };
-
-            const filter: any = {};
-
-            if (user?.role !== 'SUPER_ADMIN') {
-                if (user?.choirId) {
-                    filter.choirId = user.choirId;
-                }
-            } else {
-                if (choirId) {
-                    filter.choirId = choirId;
-                } else if (choirKey) {
-                    const resolved = await resolveChoirIdFromKey(choirKey);
-                    if (resolved) {
-                        filter.choirId = resolved;
-                    }
-                } else if (user?.choirId) {
-                    filter.choirId = user.choirId;
-                }
-            }
+            const filter = await buildAdminFilter(req);
 
             const query = Song.find(filter).populate('songTypeId', 'name order');
             const docs = await applyPopulateAuthors(query);

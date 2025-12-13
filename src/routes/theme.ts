@@ -36,24 +36,65 @@ const resolveChoirIdFromKey = async (choirKey?: string | null): Promise<string |
     return choir ? (choir as any).id : null;
 };
 
-// PUBLIC ENDPOINT
+/**
+ * Helper: Build public filter for themes.
+ * Priority:
+ *  - query ?choirId=
+ *  - query ?choirKey=
+ *  - param :choirKey (id, code or name)
+ */
+const buildPublicFilter = async (req: Request): Promise<any> => {
+    const { choirId, choirKey } = req.query as {
+        choirId?: string;
+        choirKey?: string;
+    };
+
+    const choirKeyParam = (req.params as any).choirKey as string | undefined;
+
+    const filter: any = {};
+
+    let resolvedChoirId: string | null = null;
+
+    if (choirId && typeof choirId === 'string' && choirId.trim() !== '') {
+        resolvedChoirId = choirId;
+    } else {
+        const keyToResolve =
+            choirKey && typeof choirKey === 'string' && choirKey.trim() !== ''
+                ? choirKey
+                : choirKeyParam;
+
+        if (keyToResolve) {
+            resolvedChoirId = await resolveChoirIdFromKey(keyToResolve);
+        }
+    }
+
+    if (resolvedChoirId) {
+        filter.choirId = resolvedChoirId;
+    }
+
+    return filter;
+};
+
+// PUBLIC ENDPOINT (base, supports ?choirId= / ?choirKey=)
 router.get('/public', async (req: Request, res: Response): Promise<void> => {
     try {
-        const { choirId, choirKey } = req.query as {
-            choirId?: string;
-            choirKey?: string;
-        };
+        const filter = await buildPublicFilter(req);
 
-        const filter: any = {};
+        const themes = await Theme.find(filter).sort({ name: 1 });
 
-        if (choirId) {
-            filter.choirId = choirId;
-        } else if (choirKey) {
-            const resolved = await resolveChoirIdFromKey(choirKey);
-            if (resolved) {
-                filter.choirId = resolved;
-            }
-        }
+        res.json({ themes: themes.map(t => t.toJSON()) });
+    } catch (err: any) {
+        res.status(500).json({
+            message: 'Error retrieving public themes',
+            error: err.message,
+        });
+    }
+});
+
+// PUBLIC ENDPOINT with choirKey in path: /themes/public/:choirKey
+router.get('/public/:choirKey', async (req: Request, res: Response): Promise<void> => {
+    try {
+        const filter = await buildPublicFilter(req);
 
         const themes = await Theme.find(filter).sort({ name: 1 });
 
@@ -85,9 +126,9 @@ router.get('/', verifyToken, async (req: RequestWithUser, res: Response): Promis
                 filter.choirId = user.choirId;
             }
         } else {
-            if (choirId) {
+            if (choirId && typeof choirId === 'string' && choirId.trim() !== '') {
                 filter.choirId = choirId;
-            } else if (choirKey) {
+            } else if (choirKey && typeof choirKey === 'string' && choirKey.trim() !== '') {
                 const resolved = await resolveChoirIdFromKey(choirKey);
                 if (resolved) {
                     filter.choirId = resolved;
@@ -211,9 +252,9 @@ router.post(
             let targetChoirId: string | null = null;
 
             if (user?.role === 'SUPER_ADMIN') {
-                if (choirId) {
+                if (choirId && typeof choirId === 'string' && choirId.trim() !== '') {
                     targetChoirId = choirId;
-                } else if (choirKey) {
+                } else if (choirKey && typeof choirKey === 'string' && choirKey.trim() !== '') {
                     targetChoirId = await resolveChoirIdFromKey(choirKey);
                 } else if (user.choirId) {
                     targetChoirId = user.choirId;
@@ -306,9 +347,9 @@ router.put(
             }
 
             if (user?.role === 'SUPER_ADMIN') {
-                if (body.choirId) {
+                if (body.choirId && typeof body.choirId === 'string' && body.choirId.trim() !== '') {
                     theme.choirId = body.choirId;
-                } else if (body.choirKey) {
+                } else if (body.choirKey && typeof body.choirKey === 'string' && body.choirKey.trim() !== '') {
                     const resolved = await resolveChoirIdFromKey(body.choirKey);
                     if (resolved) {
                         theme.choirId = resolved as any;

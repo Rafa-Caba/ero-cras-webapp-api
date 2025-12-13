@@ -34,7 +34,6 @@ const parseBody = (req: Request) => {
 const resolveChoirIdFromKey = async (choirKey?: string | null): Promise<string | null> => {
     if (!choirKey) return null;
 
-    // Direct ObjectId
     if (Types.ObjectId.isValid(choirKey)) {
         return choirKey;
     }
@@ -43,7 +42,6 @@ const resolveChoirIdFromKey = async (choirKey?: string | null): Promise<string |
         $or: [{ code: choirKey }, { name: choirKey }]
     }).select('_id');
 
-    // Use .id (mongoose virtual) to avoid TS "unknown" on _id
     return choir ? (choir as any).id : null;
 };
 
@@ -51,18 +49,27 @@ const resolveChoirIdFromKey = async (choirKey?: string | null): Promise<string |
  * Helper: Build public filter for announcements
  * Priority:
  *  - query ?choirId=
+ *  - query ?choirKey=
  *  - param :choirKey (id, code or name)
  */
 const buildPublicFilter = async (req: Request): Promise<any> => {
-    const { choirId } = req.query;
+    const { choirId, choirKey } = req.query as {
+        choirId?: string;
+        choirKey?: string;
+    };
     const choirKeyParam = (req.params as any).choirKey as string | undefined;
 
     const filter: any = { isPublic: true };
 
-    const resolvedChoirId =
-        (choirId && typeof choirId === 'string')
-            ? choirId
-            : (choirKeyParam ? await resolveChoirIdFromKey(choirKeyParam) : null);
+    let resolvedChoirId: string | null = null;
+
+    if (choirId) {
+        resolvedChoirId = choirId;
+    } else if (choirKey) {
+        resolvedChoirId = await resolveChoirIdFromKey(choirKey);
+    } else if (choirKeyParam) {
+        resolvedChoirId = await resolveChoirIdFromKey(choirKeyParam);
+    }
 
     if (resolvedChoirId) {
         filter.choirId = resolvedChoirId;
@@ -71,7 +78,36 @@ const buildPublicFilter = async (req: Request): Promise<any> => {
     return filter;
 };
 
-// Public Endpoint (base, optional ?choirId=)
+const buildAdminFilter = async (req: RequestWithUser): Promise<any> => {
+    const user = req.user;
+    const { choirId, choirKey } = req.query as {
+        choirId?: string;
+        choirKey?: string;
+    };
+
+    const filter: any = {};
+
+    if (user?.role !== 'SUPER_ADMIN') {
+        if (user?.choirId) {
+            filter.choirId = user.choirId;
+        }
+    } else {
+        if (choirId) {
+            filter.choirId = choirId;
+        } else if (choirKey) {
+            const resolved = await resolveChoirIdFromKey(choirKey);
+            if (resolved) {
+                filter.choirId = resolved;
+            }
+        } else if (user?.choirId) {
+            filter.choirId = user.choirId;
+        }
+    }
+
+    return filter;
+};
+
+// Public Endpoint (base, optional ?choirId= or ?choirKey=)
 router.get('/public', async (req: Request, res: Response) => {
     try {
         const filter = await buildPublicFilter(req);
@@ -104,18 +140,9 @@ router.get('/public/:choirKey', async (req: Request, res: Response) => {
 // 🔐 Admin Endpoint (scoped by choirId for non-SUPER_ADMIN)
 router.get('/admin', verifyToken, async (req: RequestWithUser, res: Response) => {
     try {
-        const user = req.user;
-        const query: any = {};
+        const filter = await buildAdminFilter(req);
 
-        if (user?.role !== 'SUPER_ADMIN') {
-            if (user?.choirId) {
-                query.choirId = user.choirId;
-            }
-        } else if (req.query.choirId) {
-            query.choirId = req.query.choirId;
-        }
-
-        const announcementsQuery = Announcement.find(query).sort({ createdAt: -1 });
+        const announcementsQuery = Announcement.find(filter).sort({ createdAt: -1 });
         const announcements = await applyPopulateAuthors(announcementsQuery);
 
         res.json(announcements.map((a: any) => a.toJSON()));
@@ -158,6 +185,7 @@ router.post(
     async (req: RequestWithUser, res: Response): Promise<void> => {
         try {
             const body = parseBody(req);
+            const user = req.user;
             const { title, content } = body;
 
             const isPublic = body.isPublic === 'true' || body.isPublic === true;
@@ -167,7 +195,19 @@ router.post(
                 return;
             }
 
-            const choirId = req.user?.choirId || null;
+            let targetChoirId: string | null = null;
+
+            if (user?.role === 'SUPER_ADMIN') {
+                if (body.choirId) {
+                    targetChoirId = body.choirId;
+                } else if (body.choirKey) {
+                    targetChoirId = await resolveChoirIdFromKey(body.choirKey);
+                } else if (user.choirId) {
+                    targetChoirId = user.choirId;
+                }
+            } else if (user?.choirId) {
+                targetChoirId = user.choirId;
+            }
 
             const newAnnouncement = new Announcement({
                 title,
@@ -175,7 +215,7 @@ router.post(
                 isPublic,
                 imageUrl: req.file?.path || '',
                 imagePublicId: req.file?.filename || null,
-                choirId,
+                choirId: targetChoirId || null,
                 createdBy: req.body.createdBy
             });
 
@@ -238,11 +278,23 @@ router.put(
 
             const user = req.user;
 
-            // Choir scoping
+            // Choir scoping for non-SUPER_ADMIN
             if (user?.role !== 'SUPER_ADMIN' && user?.choirId && announcement.choirId) {
                 if (announcement.choirId.toString() !== user.choirId.toString()) {
                     res.status(404).json({ message: 'Announcement not found' });
                     return;
+                }
+            }
+
+            // SUPER_ADMIN can reassign choir
+            if (user?.role === 'SUPER_ADMIN') {
+                if (body.choirId) {
+                    announcement.choirId = body.choirId;
+                } else if (body.choirKey) {
+                    const resolved = await resolveChoirIdFromKey(body.choirKey);
+                    if (resolved) {
+                        announcement.choirId = resolved as any;
+                    }
                 }
             }
 

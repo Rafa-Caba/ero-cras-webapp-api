@@ -24,18 +24,46 @@ const resolveChoirIdFromKey = async (choirKey?: string | null): Promise<string |
     return choir ? (choir as any).id : null;
 };
 
-/**
- * PUBLIC ENDPOINT
- */
-router.get('/public', async (req: Request, res: Response): Promise<void> => {
-    try {
-        const { choirId, choirKey } = req.query as {
-            choirId?: string;
-            choirKey?: string;
-        };
+const buildPublicFilter = async (req: Request): Promise<any> => {
+    const { choirId, choirKey } = req.query as {
+        choirId?: string;
+        choirKey?: string;
+    };
+    const choirKeyParam = (req.params as any).choirKey as string | undefined;
 
-        const filter: any = {};
+    const filter: any = {};
 
+    let resolvedChoirId: string | null = null;
+
+    if (choirId) {
+        resolvedChoirId = choirId;
+    } else if (choirKey) {
+        resolvedChoirId = await resolveChoirIdFromKey(choirKey);
+    } else if (choirKeyParam) {
+        resolvedChoirId = await resolveChoirIdFromKey(choirKeyParam);
+    }
+
+    if (resolvedChoirId) {
+        filter.choirId = resolvedChoirId;
+    }
+
+    return filter;
+};
+
+const buildAdminFilter = async (req: RequestWithUser): Promise<any> => {
+    const user = req.user;
+    const { choirId, choirKey } = req.query as {
+        choirId?: string;
+        choirKey?: string;
+    };
+
+    const filter: any = {};
+
+    if (user?.role !== 'SUPER_ADMIN') {
+        if (user?.choirId) {
+            filter.choirId = user.choirId;
+        }
+    } else {
         if (choirId) {
             filter.choirId = choirId;
         } else if (choirKey) {
@@ -43,7 +71,22 @@ router.get('/public', async (req: Request, res: Response): Promise<void> => {
             if (resolved) {
                 filter.choirId = resolved;
             }
+        } else if (user?.choirId) {
+            filter.choirId = user.choirId;
         }
+    }
+
+    return filter;
+};
+
+/**
+ * PUBLIC ENDPOINTS
+ */
+
+// /api/songTypes/public?choirId=&choirKey=
+router.get('/public', async (req: Request, res: Response): Promise<void> => {
+    try {
+        const filter = await buildPublicFilter(req);
 
         const types = await SongType.find(filter).sort({ order: 1 });
 
@@ -56,36 +99,34 @@ router.get('/public', async (req: Request, res: Response): Promise<void> => {
     }
 });
 
-// ADMIN LIST 
+// /api/songTypes/public/:choirKey
+router.get('/public/:choirKey', async (req: Request, res: Response): Promise<void> => {
+    try {
+        const filter = await buildPublicFilter(req);
+
+        const types = await SongType.find(filter).sort({ order: 1 });
+
+        res.json({ types });
+    } catch (err: any) {
+        res.status(500).json({
+            message: 'Error retrieving public song types',
+            error: err.message
+        });
+    }
+});
+
+/**
+ * ADMIN LIST
+ */
 router.get('/', verifyToken, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
-        const user = req.user;
-        const { all, page, limit, choirId, choirKey } = req.query as {
+        const filter = await buildAdminFilter(req);
+
+        const { all, page, limit } = req.query as {
             all?: string;
             page?: string;
             limit?: string;
-            choirId?: string;
-            choirKey?: string;
         };
-
-        const filter: any = {};
-
-        if (user?.role !== 'SUPER_ADMIN') {
-            if (user?.choirId) {
-                filter.choirId = user.choirId;
-            }
-        } else {
-            if (choirId) {
-                filter.choirId = choirId;
-            } else if (choirKey) {
-                const resolved = await resolveChoirIdFromKey(choirKey);
-                if (resolved) {
-                    filter.choirId = resolved;
-                }
-            } else if (user?.choirId) {
-                filter.choirId = user.choirId;
-            }
-        }
 
         if (all === 'true' || !page) {
             const queryTypes = SongType.find(filter).sort({ order: 1 });
@@ -297,7 +338,8 @@ router.put(
 
                 if (existing && existing.id.toString() !== id) {
                     res.status(409).json({
-                        message: 'A song type with this name already exists in this folder for this choir.'
+                        message:
+                            'A song type with this name already exists in this folder for this choir.'
                     });
                     return;
                 }

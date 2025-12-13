@@ -1,4 +1,3 @@
-// src/routes/choirs.ts
 import express, { Request, Response } from 'express';
 import Choir from '../models/Choir';
 import verifyToken, { RequestWithUser } from '../middlewares/auth';
@@ -39,15 +38,23 @@ router.get('/public', async (_req: Request, res: Response): Promise<void> => {
     }
 });
 
-// ---------- ADMIN LIST (PAGINATED) ----------
+// ---------- ADMIN LIST (PAGINATED, choir-scoped for non SUPER_ADMIN) ----------
 router.get('/', verifyToken, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
+        const currentUser = req.user;
         const page = Number(req.query.page) > 0 ? Number(req.query.page) : 1;
         const limit = 10;
         const skip = (page - 1) * limit;
 
-        const totalChoirs = await Choir.countDocuments();
-        const query = Choir.find()
+        const filter: any = {};
+
+        // Non SUPER_ADMIN only sees their own choir
+        if (currentUser?.role !== 'SUPER_ADMIN' && currentUser?.choirId) {
+            filter._id = currentUser.choirId;
+        }
+
+        const totalChoirs = await Choir.countDocuments(filter);
+        const query = Choir.find(filter)
             .sort({ name: 1 })
             .skip(skip)
             .limit(limit);
@@ -68,18 +75,35 @@ router.get('/', verifyToken, async (req: RequestWithUser, res: Response): Promis
     }
 });
 
-// ---------- GET ONE ----------
+// ---------- GET ONE (choir-scoped for non SUPER_ADMIN) ----------
 router.get('/:id', verifyToken, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const choir = await applyPopulateSingleAuthor(Choir.findById(id));
+        const currentUser = req.user;
 
-        if (!choir) {
+        const choirDoc = await applyPopulateSingleAuthor(Choir.findById(id));
+
+        if (!choirDoc) {
             res.status(404).json({ message: 'Choir not found' });
             return;
         }
 
-        res.json(choir.toJSON());
+        const choir: any =
+            typeof (choirDoc as any).toJSON === 'function'
+                ? (choirDoc as any).toJSON()
+                : choirDoc;
+
+        if (
+            currentUser?.role !== 'SUPER_ADMIN' &&
+            currentUser?.choirId &&
+            choir.id &&
+            choir.id.toString() !== currentUser.choirId.toString()
+        ) {
+            res.status(404).json({ message: 'Choir not found' });
+            return;
+        }
+
+        res.json(choir);
     } catch (err: any) {
         console.error('Error retrieving choir:', err);
         res.status(500).json({ message: 'Error retrieving choir', error: err.message });

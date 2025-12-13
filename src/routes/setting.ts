@@ -38,24 +38,64 @@ const resolveChoirIdFromKey = async (choirKey?: string | null): Promise<string |
     return choir ? (choir as any).id : null;
 };
 
-// Public Endpoint (optionally choir-scoped)
-router.get('/public', async (req: Request, res: Response) => {
-    try {
-        const { choirId, choirKey } = req.query as {
-            choirId?: string;
-            choirKey?: string;
-        };
+const buildPublicFilter = async (req: Request): Promise<any> => {
+    const { choirId, choirKey } = req.query as {
+        choirId?: string;
+        choirKey?: string;
+    };
+    const choirKeyParam = (req.params as any).choirKey as string | undefined;
 
-        const filter: any = {};
+    const filter: any = {};
+    let resolvedChoirId: string | null = null;
 
-        if (choirId) {
-            filter.choirId = choirId;
+    if (choirId) {
+        resolvedChoirId = choirId;
+    } else if (choirKey) {
+        resolvedChoirId = await resolveChoirIdFromKey(choirKey);
+    } else if (choirKeyParam) {
+        resolvedChoirId = await resolveChoirIdFromKey(choirKeyParam);
+    }
+
+    if (resolvedChoirId) {
+        filter.choirId = resolvedChoirId;
+    }
+
+    return filter;
+};
+
+const buildAdminFilter = async (req: RequestWithUser): Promise<any> => {
+    const user = req.user;
+    const { choirId: queryChoirId, choirKey } = req.query as {
+        choirId?: string;
+        choirKey?: string;
+    };
+
+    const filter: any = {};
+
+    if (user?.role !== 'SUPER_ADMIN') {
+        if (user?.choirId) {
+            filter.choirId = user.choirId;
+        }
+    } else {
+        if (queryChoirId) {
+            filter.choirId = queryChoirId;
         } else if (choirKey) {
             const resolved = await resolveChoirIdFromKey(choirKey);
             if (resolved) {
                 filter.choirId = resolved;
             }
+        } else if (user?.choirId) {
+            filter.choirId = user.choirId;
         }
+    }
+
+    return filter;
+};
+
+// Public Endpoint (optionally choir-scoped)
+router.get('/public', async (req: Request, res: Response) => {
+    try {
+        const filter = await buildPublicFilter(req);
 
         let settingsDoc: any;
 
@@ -69,8 +109,8 @@ router.get('/public', async (req: Request, res: Response) => {
             const newPayload: any = {
                 history: { type: 'doc', content: [] }
             };
-            if (filter.choirId) {
-                newPayload.choirId = filter.choirId;
+            if ((filter as any).choirId) {
+                newPayload.choirId = (filter as any).choirId;
             }
 
             const newSettings = new Settings(newPayload);
@@ -91,29 +131,8 @@ router.get('/public', async (req: Request, res: Response) => {
 router.get('/', verifyToken, async (req: RequestWithUser, res: Response) => {
     try {
         const user = req.user;
-        const { choirId: queryChoirId, choirKey } = req.query as {
-            choirId?: string;
-            choirKey?: string;
-        };
 
-        const filter: any = {};
-
-        if (user?.role !== 'SUPER_ADMIN') {
-            if (user?.choirId) {
-                filter.choirId = user.choirId;
-            }
-        } else {
-            if (queryChoirId) {
-                filter.choirId = queryChoirId;
-            } else if (choirKey) {
-                const resolved = await resolveChoirIdFromKey(choirKey);
-                if (resolved) {
-                    filter.choirId = resolved;
-                }
-            } else if (user?.choirId) {
-                filter.choirId = user.choirId;
-            }
-        }
+        const filter = await buildAdminFilter(req);
 
         let settingsDoc: any;
 
@@ -128,8 +147,8 @@ router.get('/', verifyToken, async (req: RequestWithUser, res: Response) => {
                 history: { type: 'doc', content: [] }
             };
 
-            if (filter.choirId) {
-                payload.choirId = filter.choirId;
+            if ((filter as any).choirId) {
+                payload.choirId = (filter as any).choirId;
             } else if (user?.choirId) {
                 payload.choirId = user.choirId;
             }

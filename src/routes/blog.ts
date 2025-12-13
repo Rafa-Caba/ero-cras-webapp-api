@@ -41,25 +41,84 @@ const resolveChoirIdFromKey = async (choirKey?: string | null): Promise<string |
         $or: [{ code: choirKey }, { name: choirKey }]
     }).select('_id');
 
-    return choir ? choir.id.toString() : null;
+    return choir ? (choir as any).id : null;
 };
 
 /**
- * Helper: Build public filter for blog posts
+ * Helper: Build public filter for blog posts.
+ * Priority:
+ *  - query ?choirId=
+ *  - query ?choirKey=
+ *  - param :choirKey
  */
 const buildPublicFilter = async (req: Request): Promise<any> => {
-    const { choirId } = req.query;
+    const { choirId, choirKey } = req.query as {
+        choirId?: string;
+        choirKey?: string;
+    };
     const choirKeyParam = (req.params as any).choirKey as string | undefined;
 
     const filter: any = { isPublic: true };
 
-    const resolvedChoirId =
-        (choirId && typeof choirId === 'string')
-            ? choirId
-            : (choirKeyParam ? await resolveChoirIdFromKey(choirKeyParam) : null);
+    let resolvedChoirId: string | null = null;
+
+    if (choirId && typeof choirId === 'string' && choirId.trim() !== '') {
+        resolvedChoirId = choirId;
+    } else {
+        const keyToResolve =
+            choirKey && typeof choirKey === 'string' && choirKey.trim() !== ''
+                ? choirKey
+                : choirKeyParam;
+
+        if (keyToResolve) {
+            resolvedChoirId = await resolveChoirIdFromKey(keyToResolve);
+        }
+    }
 
     if (resolvedChoirId) {
         filter.choirId = resolvedChoirId;
+    }
+
+    return filter;
+};
+
+/**
+ * Helper: Build admin filter (choir scoped, SUPER_ADMIN can override).
+ * Priority for SUPER_ADMIN:
+ *  - query ?choirId=
+ *  - query ?choirKey=
+ *  - token choirId
+ * For others:
+ *  - token choirId
+ */
+const buildAdminFilter = async (req: RequestWithUser): Promise<any> => {
+    const user = req.user;
+    const { choirId, choirKey } = req.query as {
+        choirId?: string;
+        choirKey?: string;
+    };
+
+    const filter: any = {};
+
+    if (!user) {
+        return filter;
+    }
+
+    if (user.role !== 'SUPER_ADMIN') {
+        if (user.choirId) {
+            filter.choirId = user.choirId;
+        }
+    } else {
+        if (choirId && typeof choirId === 'string' && choirId.trim() !== '') {
+            filter.choirId = choirId;
+        } else if (choirKey && typeof choirKey === 'string' && choirKey.trim() !== '') {
+            const resolved = await resolveChoirIdFromKey(choirKey);
+            if (resolved) {
+                filter.choirId = resolved;
+            }
+        } else if (user.choirId) {
+            filter.choirId = user.choirId;
+        }
     }
 
     return filter;
@@ -98,19 +157,9 @@ router.get('/public/:choirKey', async (req: Request, res: Response) => {
 // 🔐 ADMIN LIST (choir-scoped)
 router.get('/', verifyToken, async (req: RequestWithUser, res: Response) => {
     try {
-        const user = req.user;
-        const query: any = {};
+        const filter = await buildAdminFilter(req);
 
-        // Non-SUPER_ADMIN only sees their choir
-        if (user?.role !== 'SUPER_ADMIN') {
-            if (user?.choirId) {
-                query.choirId = user.choirId;
-            }
-        } else if (req.query.choirId) {
-            query.choirId = req.query.choirId;
-        }
-
-        const posts = await BlogPost.find(query)
+        const posts = await BlogPost.find(filter)
             .sort({ createdAt: -1 })
             .populate('author', 'name username imageUrl');
 
@@ -124,8 +173,10 @@ router.get('/', verifyToken, async (req: RequestWithUser, res: Response) => {
 router.get('/:id', verifyToken, async (req: RequestWithUser, res: Response): Promise<void> => {
     try {
         const user = req.user;
-        const post = await BlogPost.findById(req.params.id)
-            .populate('author', 'name username imageUrl');
+        const post = await BlogPost.findById(req.params.id).populate(
+            'author',
+            'name username imageUrl'
+        );
 
         if (!post) {
             res.status(404).json({ message: 'Post not found' });
@@ -281,157 +332,175 @@ router.put(
 );
 
 // TOGGLE LIKE (choir-safe)
-router.put('/:id/like', verifyToken, async (req: RequestWithUser, res: Response): Promise<void> => {
-    const userId = req.user?.id;
-    const postId = req.params.id;
-    const user = req.user;
-
-    if (!userId) {
-        res.status(401).json({ message: 'User ID missing' });
-        return;
-    }
-
-    try {
-        // 1. Fetch lean to check existence, choir, and likes list
-        const postDoc = await BlogPost.findById(postId).select('likesUsers choirId likes').lean();
-        if (!postDoc) {
-            res.status(404).json({ message: 'Post not found' });
-            return;
-        }
-
-        if (user?.role !== 'SUPER_ADMIN' && user?.choirId && postDoc.choirId) {
-            if (postDoc.choirId.toString() !== user.choirId.toString()) {
-                res.status(404).json({ message: 'Post not found' });
-                return;
-            }
-        }
-
-        // @ts-ignore
-        const likesList = postDoc.likesUsers || [];
-        // @ts-ignore
-        const isLiked = likesList.some((id: any) => id.toString() === userId.toString());
-
-        let updateQuery: any = {};
-
-        if (isLiked) {
-            // UNLIKE
-            updateQuery = {
-                $pull: { likesUsers: new Types.ObjectId(userId) },
-                $inc: { likes: -1 }
-            };
-        } else {
-            // LIKE
-            updateQuery = {
-                $addToSet: { likesUsers: new Types.ObjectId(userId) },
-                $inc: { likes: 1 }
-            };
-        }
-
-        const updatedPost = await BlogPost.findByIdAndUpdate(
-            postId,
-            updateQuery,
-            { new: true, runValidators: false }
-        ).select('likes likesUsers');
-
-        if (!updatedPost) {
-            res.status(404).json({ message: 'Post not found after like update' });
-            return;
-        }
-
-        // Sanity check: Ensure likes is never negative
-        if (updatedPost.likes < 0) {
-            updatedPost.likes = 0;
-            await BlogPost.findByIdAndUpdate(postId, { $set: { likes: 0 } });
-        }
-
-        res.json({
-            message: 'Like updated',
-            likes: updatedPost.likes,
-            likesUsers: updatedPost.likesUsers
-        });
-    } catch (error: any) {
-        console.error('❌ Like Error:', error);
-        res.status(500).json({ message: 'Error updating like', error: error.message });
-    }
-});
-
-// ADD COMMENT (choir-safe)
-router.post('/:id/comment', verifyToken, async (req: RequestWithUser, res: Response): Promise<void> => {
-    try {
-        const { text } = req.body;
-        const authorName = req.user?.username || 'Unknown';
+router.put(
+    '/:id/like',
+    verifyToken,
+    async (req: RequestWithUser, res: Response): Promise<void> => {
+        const userId = req.user?.id;
+        const postId = req.params.id;
         const user = req.user;
 
-        const post = await BlogPost.findById(req.params.id);
-        if (!post) {
-            res.status(404).json({ message: 'Post not found' });
+        if (!userId) {
+            res.status(401).json({ message: 'User ID missing' });
             return;
         }
-
-        if (user?.role !== 'SUPER_ADMIN' && user?.choirId && post.choirId) {
-            if (post.choirId.toString() !== user.choirId.toString()) {
-                res.status(404).json({ message: 'Post not found' });
-                return;
-            }
-        }
-
-        post.comments.push({
-            author: authorName,
-            text,
-            date: new Date()
-        });
 
         try {
-            await post.save();
-        } catch (saveError) {
-            await BlogPost.findByIdAndUpdate(
-                req.params.id,
-                { $push: { comments: { author: authorName, text, date: new Date() } } },
-                { runValidators: false }
-            );
-        }
-
-        res.json({ message: 'Comment added', comments: post.comments });
-    } catch (error: any) {
-        res.status(500).json({ message: error.message });
-    }
-});
-
-// DELETE (choir-safe)
-router.delete('/:id', verifyToken, async (req: RequestWithUser, res: Response): Promise<void> => {
-    try {
-        const user = req.user;
-        const post = await BlogPost.findById(req.params.id);
-        if (!post) {
-            res.status(404).json({ message: 'Post not found' });
-            return;
-        }
-
-        if (user?.role !== 'SUPER_ADMIN' && user?.choirId && post.choirId) {
-            if (post.choirId.toString() !== user.choirId.toString()) {
+            // 1. Fetch lean to check existence, choir, and likes list
+            const postDoc = await BlogPost.findById(postId)
+                .select('likesUsers choirId likes')
+                .lean();
+            if (!postDoc) {
                 res.status(404).json({ message: 'Post not found' });
                 return;
             }
+
+            if (user?.role !== 'SUPER_ADMIN' && user?.choirId && postDoc.choirId) {
+                if (postDoc.choirId.toString() !== user.choirId.toString()) {
+                    res.status(404).json({ message: 'Post not found' });
+                    return;
+                }
+            }
+
+            // @ts-ignore
+            const likesList = postDoc.likesUsers || [];
+            // @ts-ignore
+            const isLiked = likesList.some((id: any) => id.toString() === userId.toString());
+
+            let updateQuery: any = {};
+
+            if (isLiked) {
+                // UNLIKE
+                updateQuery = {
+                    $pull: { likesUsers: new Types.ObjectId(userId) },
+                    $inc: { likes: -1 }
+                };
+            } else {
+                // LIKE
+                updateQuery = {
+                    $addToSet: { likesUsers: new Types.ObjectId(userId) },
+                    $inc: { likes: 1 }
+                };
+            }
+
+            const updatedPost = await BlogPost.findByIdAndUpdate(
+                postId,
+                updateQuery,
+                { new: true, runValidators: false }
+            ).select('likes likesUsers');
+
+            if (!updatedPost) {
+                res.status(404).json({ message: 'Post not found after like update' });
+                return;
+            }
+
+            // Sanity check: Ensure likes is never negative
+            if (updatedPost.likes < 0) {
+                updatedPost.likes = 0;
+                await BlogPost.findByIdAndUpdate(postId, { $set: { likes: 0 } });
+            }
+
+            res.json({
+                message: 'Like updated',
+                likes: updatedPost.likes,
+                likesUsers: updatedPost.likesUsers
+            });
+        } catch (error: any) {
+            console.error('❌ Like Error:', error);
+            res.status(500).json({ message: 'Error updating like', error: error.message });
         }
-
-        if (post.imagePublicId) {
-            await cloudinary.uploader.destroy(post.imagePublicId);
-        }
-
-        await BlogPost.findByIdAndDelete(req.params.id);
-
-        await registerLog({
-            req: req as any,
-            collection: 'BlogPosts',
-            action: 'delete',
-            referenceId: post.id.toString(),
-            changes: { deleted: post.toJSON() }
-        });
-
-        res.json({ message: 'Post deleted' });
-    } catch (error: any) {
-        res.status(500).json({ message: error.message });
     }
-});
+);
+
+// ADD COMMENT (choir-safe)
+router.post(
+    '/:id/comment',
+    verifyToken,
+    async (req: RequestWithUser, res: Response): Promise<void> => {
+        try {
+            const { text } = req.body;
+            const authorName = req.user?.username || 'Unknown';
+            const user = req.user;
+
+            const post = await BlogPost.findById(req.params.id);
+            if (!post) {
+                res.status(404).json({ message: 'Post not found' });
+                return;
+            }
+
+            if (user?.role !== 'SUPER_ADMIN' && user?.choirId && post.choirId) {
+                if (post.choirId.toString() !== user.choirId.toString()) {
+                    res.status(404).json({ message: 'Post not found' });
+                    return;
+                }
+            }
+
+            post.comments.push({
+                author: authorName,
+                text,
+                date: new Date()
+            });
+
+            try {
+                await post.save();
+            } catch (saveError) {
+                await BlogPost.findByIdAndUpdate(
+                    req.params.id,
+                    {
+                        $push: {
+                            comments: { author: authorName, text, date: new Date() }
+                        }
+                    },
+                    { runValidators: false }
+                );
+            }
+
+            res.json({ message: 'Comment added', comments: post.comments });
+        } catch (error: any) {
+            res.status(500).json({ message: error.message });
+        }
+    }
+);
+
+// DELETE (choir-safe)
+router.delete(
+    '/:id',
+    verifyToken,
+    async (req: RequestWithUser, res: Response): Promise<void> => {
+        try {
+            const user = req.user;
+            const post = await BlogPost.findById(req.params.id);
+            if (!post) {
+                res.status(404).json({ message: 'Post not found' });
+                return;
+            }
+
+            if (user?.role !== 'SUPER_ADMIN' && user?.choirId && post.choirId) {
+                if (post.choirId.toString() !== user.choirId.toString()) {
+                    res.status(404).json({ message: 'Post not found' });
+                    return;
+                }
+            }
+
+            if (post.imagePublicId) {
+                await cloudinary.uploader.destroy(post.imagePublicId);
+            }
+
+            await BlogPost.findByIdAndDelete(req.params.id);
+
+            await registerLog({
+                req: req as any,
+                collection: 'BlogPosts',
+                action: 'delete',
+                referenceId: post.id.toString(),
+                changes: { deleted: post.toJSON() }
+            });
+
+            res.json({ message: 'Post deleted' });
+        } catch (error: any) {
+            res.status(500).json({ message: error.message });
+        }
+    }
+);
 
 export default router;

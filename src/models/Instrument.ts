@@ -12,6 +12,8 @@ export interface IInstrument extends Document {
     isActive: boolean;
     order: number;
 
+    choirId: Types.ObjectId;
+
     createdBy?: Types.ObjectId;
     updatedBy?: Types.ObjectId;
 
@@ -38,6 +40,12 @@ const InstrumentSchema = new Schema<IInstrument>(
 
         isActive: { type: Boolean, default: true },
         order: { type: Number, default: 0 },
+
+        choirId: {
+            type: Schema.Types.ObjectId,
+            ref: 'Choir',
+            required: true
+        },
 
         createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
         updatedBy: { type: Schema.Types.ObjectId, ref: 'User' }

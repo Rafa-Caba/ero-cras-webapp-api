@@ -5,7 +5,10 @@ import { v2 as cloudinary } from 'cloudinary';
 import { uploadMemberImage } from '../middlewares/cloudinaryStorage';
 import verifyToken, { RequestWithUser } from '../middlewares/auth';
 import { setUpdatedBy, setCreatedBy } from '../utils/setCreatedBy';
-import { applyPopulateAuthors, applyPopulateSingleAuthor } from '../utils/populateHelpers';
+import {
+    applyPopulateAuthors,
+    applyPopulateSingleAuthor
+} from '../utils/populateHelpers';
 import { registerLog } from '../utils/logger';
 import Member from '../models/Member';
 import Choir from '../models/Choir';
@@ -38,24 +41,73 @@ const resolveChoirIdFromKey = async (choirKey?: string | null): Promise<string |
     return choir ? (choir as any).id : null;
 };
 
+/**
+ * PUBLIC filter (like Gallery)
+ * Priority:
+ *  - query ?choirId=
+ *  - query ?choirKey=
+ *  - param :choirKey (if later you add /public/:choirKey)
+ */
+const buildPublicFilter = async (req: Request): Promise<any> => {
+    const { choirId, choirKey } = req.query as {
+        choirId?: string;
+        choirKey?: string;
+    };
+    const choirKeyParam = (req.params as any).choirKey as string | undefined;
+
+    const filter: any = {};
+
+    let resolvedChoirId: string | null = null;
+
+    if (choirId) {
+        resolvedChoirId = choirId;
+    } else if (choirKey) {
+        resolvedChoirId = await resolveChoirIdFromKey(choirKey);
+    } else if (choirKeyParam) {
+        resolvedChoirId = await resolveChoirIdFromKey(choirKeyParam);
+    }
+
+    if (resolvedChoirId) {
+        filter.choirId = resolvedChoirId;
+    }
+
+    return filter;
+};
+
+/**
+ * ADMIN filter (choir-scoped, like Gallery)
+ */
+const buildAdminFilter = async (req: RequestWithUser): Promise<any> => {
+    const authUser = req.user;
+    const { choirId: queryChoirId, choirKey } = req.query as {
+        choirId?: string;
+        choirKey?: string;
+    };
+
+    const filters: any = {};
+
+    if (authUser?.role !== 'SUPER_ADMIN') {
+        if (authUser?.choirId) {
+            filters.choirId = authUser.choirId;
+        }
+    } else {
+        if (queryChoirId) {
+            filters.choirId = queryChoirId;
+        } else if (choirKey) {
+            const resolved = await resolveChoirIdFromKey(choirKey);
+            if (resolved) filters.choirId = resolved;
+        } else if (authUser?.choirId) {
+            filters.choirId = authUser.choirId;
+        }
+    }
+
+    return filters;
+};
+
 // PUBLIC ENDPOINT (optionally choir-scoped)
 router.get('/public', async (req: Request, res: Response): Promise<void> => {
     try {
-        const { choirId, choirKey } = req.query as {
-            choirId?: string;
-            choirKey?: string;
-        };
-
-        const filter: any = {};
-
-        if (choirId) {
-            filter.choirId = choirId;
-        } else if (choirKey) {
-            const resolved = await resolveChoirIdFromKey(choirKey);
-            if (resolved) {
-                filter.choirId = resolved;
-            }
-        }
+        const filter = await buildPublicFilter(req);
 
         const members = await Member.find(filter)
             .select('name instrumentLabel instrumentId voice imageUrl')
@@ -88,26 +140,8 @@ router.get(
                 $or: [{ name: regex }, { instrumentLabel: regex }]
             };
 
-            const authUser = req.user;
-            const { choirId: queryChoirId, choirKey } = req.query as {
-                choirId?: string;
-                choirKey?: string;
-            };
-
-            if (authUser?.role !== 'SUPER_ADMIN') {
-                if (authUser?.choirId) {
-                    filters.choirId = authUser.choirId;
-                }
-            } else {
-                if (queryChoirId) {
-                    filters.choirId = queryChoirId;
-                } else if (choirKey) {
-                    const resolved = await resolveChoirIdFromKey(choirKey);
-                    if (resolved) {
-                        filters.choirId = resolved;
-                    }
-                }
-            }
+            const choirFilter = await buildAdminFilter(req);
+            Object.assign(filters, choirFilter);
 
             const members = await applyPopulateAuthors(
                 Member.find(filters)
@@ -132,27 +166,7 @@ router.get(
             const limit = parseInt(req.query.limit as string) || 10;
             const skip = (page - 1) * limit;
 
-            const filters: any = {};
-            const authUser = req.user;
-            const { choirId: queryChoirId, choirKey } = req.query as {
-                choirId?: string;
-                choirKey?: string;
-            };
-
-            if (authUser?.role !== 'SUPER_ADMIN') {
-                if (authUser?.choirId) {
-                    filters.choirId = authUser.choirId;
-                }
-            } else {
-                if (queryChoirId) {
-                    filters.choirId = queryChoirId;
-                } else if (choirKey) {
-                    const resolved = await resolveChoirIdFromKey(choirKey);
-                    if (resolved) {
-                        filters.choirId = resolved;
-                    }
-                }
-            }
+            const filters: any = await buildAdminFilter(req);
 
             const [members, total] = await Promise.all([
                 applyPopulateAuthors(

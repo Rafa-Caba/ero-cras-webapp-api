@@ -26,6 +26,60 @@ const parseBody = (req: Request) => {
     return body;
 };
 
+/**
+ * Helper: Resolve choirId for list/search/directory queries
+ */
+const resolveChoirFilter = (req: RequestWithUser): { choirId?: string } => {
+    const currentUser = req.user;
+    const filter: { choirId?: string } = {};
+
+    if (!currentUser) {
+        return filter;
+    }
+
+    const queryChoirId = (req.query.choirId as string | undefined)?.toString();
+
+    if (currentUser.role === 'SUPER_ADMIN') {
+        if (queryChoirId) {
+            filter.choirId = queryChoirId;
+        } else if (currentUser.choirId) {
+            filter.choirId = currentUser.choirId;
+        }
+    } else {
+        if (currentUser.choirId) {
+            filter.choirId = currentUser.choirId;
+        }
+    }
+
+    return filter;
+};
+
+/**
+ * Helper: Ensure current user can access a target user
+ */
+const ensureSameChoirOrSuperAdmin = (
+    req: RequestWithUser,
+    user: any
+): string | null => {
+    const currentUser = req.user;
+    if (!currentUser) {
+        return 'No autenticado';
+    }
+
+    if (currentUser.role === 'SUPER_ADMIN') {
+        return null;
+    }
+
+    const currentChoirId = currentUser.choirId;
+    const targetChoirId = user?.choirId?.toString();
+
+    if (!currentChoirId || !targetChoirId || currentChoirId !== targetChoirId) {
+        return 'No tienes permisos para acceder a este usuario';
+    }
+
+    return null;
+};
+
 // GET /me (Profile)
 router.get(
     '/me',
@@ -163,13 +217,14 @@ router.put(
         }
     }
 );
+
 // --- ADMIN ROUTES BELOW ---
 
 // GET /search
 router.get(
     '/search',
     verifyToken,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: RequestWithUser, res: Response): Promise<void> => {
         const query = req.query.q?.toString().trim();
         if (!query) {
             res.status(400).json({ message: 'Query is empty' });
@@ -178,12 +233,28 @@ router.get(
 
         try {
             const regex = new RegExp(query, 'i');
+            const choirFilter = resolveChoirFilter(req);
+
+            // If not SUPER_ADMIN and no choirId in token → deny
+            if (!req.user) {
+                res.status(401).json({ message: 'No autenticado' });
+                return;
+            }
+            if (req.user.role !== 'SUPER_ADMIN' && !choirFilter.choirId) {
+                res.status(400).json({
+                    message: 'No se encontró coro asociado al usuario autenticado'
+                });
+                return;
+            }
+
             const users = await User.find({
+                ...choirFilter,
                 $or: [{ name: regex }, { email: regex }, { username: regex }]
             });
 
-            res.json(users.map((u) => u.toJSON()));
+            res.json(users.map(u => u.toJSON()));
         } catch (error) {
+            console.error('Search users error:', error);
             res.status(500).json({ message: 'Search error' });
         }
     }
@@ -193,14 +264,28 @@ router.get(
 router.get(
     '/directory',
     verifyToken,
-    async (_req: Request, res: Response): Promise<void> => {
+    async (req: RequestWithUser, res: Response): Promise<void> => {
         try {
-            const users = await User.find()
+            const choirFilter = resolveChoirFilter(req);
+
+            if (!req.user) {
+                res.status(401).json({ message: 'No autenticado' });
+                return;
+            }
+            if (req.user.role !== 'SUPER_ADMIN' && !choirFilter.choirId) {
+                res.status(400).json({
+                    message: 'No se encontró coro asociado al usuario autenticado'
+                });
+                return;
+            }
+
+            const users = await User.find(choirFilter)
                 .select('name username imageUrl role _id')
                 .sort({ name: 1 });
 
-            res.json(users.map((u) => u.toJSON()));
+            res.json(users.map(u => u.toJSON()));
         } catch (error) {
+            console.error('Directory error:', error);
             res.status(500).json({ message: 'Error retrieving directory' });
         }
     }
@@ -210,27 +295,41 @@ router.get(
 router.get(
     '/',
     verifyToken,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: RequestWithUser, res: Response): Promise<void> => {
         try {
+            const choirFilter = resolveChoirFilter(req);
+
+            if (!req.user) {
+                res.status(401).json({ message: 'No autenticado' });
+                return;
+            }
+            if (req.user.role !== 'SUPER_ADMIN' && !choirFilter.choirId) {
+                res.status(400).json({
+                    message: 'No se encontró coro asociado al usuario autenticado'
+                });
+                return;
+            }
+
             const page = parseInt(req.query.page as string) || 1;
             const limit = parseInt(req.query.limit as string) || 10;
             const skip = (page - 1) * limit;
 
             const [users, total] = await Promise.all([
-                User.find()
+                User.find(choirFilter)
                     .sort({ name: 1 })
                     .skip(skip)
                     .limit(limit),
-                User.countDocuments()
+                User.countDocuments(choirFilter)
             ]);
 
             res.json({
-                users: users.map((u) => u.toJSON()),
+                users: users.map(u => u.toJSON()),
                 currentPage: page,
                 totalPages: Math.ceil(total / limit),
                 totalUsers: total
             });
         } catch (error) {
+            console.error('Get users error:', error);
             res.status(500).json({ message: 'Error retrieving users' });
         }
     }
@@ -240,15 +339,23 @@ router.get(
 router.get(
     '/:id',
     verifyToken,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: RequestWithUser, res: Response): Promise<void> => {
         try {
             const user = await User.findById(req.params.id).select('-password');
             if (!user) {
                 res.status(404).json({ message: 'User not found' });
                 return;
             }
+
+            const choirError = ensureSameChoirOrSuperAdmin(req, user);
+            if (choirError) {
+                res.status(403).json({ message: choirError });
+                return;
+            }
+
             res.json(user.toJSON());
         } catch (error: any) {
+            console.error('Get user by id error:', error);
             res.status(500).json({ message: error.message });
         }
     }
@@ -269,7 +376,9 @@ router.post(
             }
 
             if (!['ADMIN', 'SUPER_ADMIN'].includes(currentUser.role)) {
-                res.status(403).json({ message: 'No tienes permisos para crear usuarios' });
+                res.status(403).json({
+                    message: 'No tienes permisos para crear usuarios'
+                });
                 return;
             }
 
@@ -295,17 +404,7 @@ router.post(
                 return;
             }
 
-            const exists = await User.findOne({
-                $or: [{ username: username.toLowerCase() }, { email }]
-            });
-
-            if (exists) {
-                res.status(409).json({ message: 'User or email already exists' });
-                return;
-            }
-
-            const hashedPassword = await bcrypt.hash(password, 10);
-
+            // Determine target choir for the new user (align with multi-choir rules)
             let targetChoirId: string | null = null;
 
             if (currentUser.role === 'SUPER_ADMIN') {
@@ -336,7 +435,31 @@ router.post(
                 return;
             }
 
-            const validRoles = ['ADMIN', 'EDITOR', 'VIEWER', 'USER', 'SUPER_ADMIN'] as const;
+            // Uniqueness check per choir (username/email within same choir)
+            const exists = await User.findOne({
+                choirId: targetChoirId,
+                $or: [
+                    { username: username.toLowerCase() },
+                    { email }
+                ]
+            });
+
+            if (exists) {
+                res.status(409).json({
+                    message: 'User or email already exists in this choir'
+                });
+                return;
+            }
+
+            const hashedPassword = await bcrypt.hash(password, 10);
+
+            const validRoles = [
+                'ADMIN',
+                'EDITOR',
+                'VIEWER',
+                'USER',
+                'SUPER_ADMIN'
+            ] as const;
             const requestedRole = (role as string) || 'VIEWER';
 
             let finalRole: (typeof validRoles)[number] = 'VIEWER';
@@ -398,7 +521,7 @@ router.put(
     '/:id',
     verifyToken,
     uploadUserImage.single('file'),
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: RequestWithUser, res: Response): Promise<void> => {
         try {
             const body = parseBody(req);
             const {
@@ -422,6 +545,19 @@ router.put(
                 return;
             }
 
+            const choirError = ensureSameChoirOrSuperAdmin(req, user);
+            if (choirError) {
+                res.status(403).json({ message: choirError });
+                return;
+            }
+
+            const currentUser = req.user;
+            if (!currentUser) {
+                res.status(401).json({ message: 'No autenticado' });
+                return;
+            }
+
+            // Handle image upload
             if (req.file) {
                 if (user.imagePublicId) {
                     await cloudinary.uploader.destroy(user.imagePublicId);
@@ -430,10 +566,48 @@ router.put(
                 user.imagePublicId = req.file.filename;
             }
 
+            // Determine new choirId (only SUPER_ADMIN can change it)
+            let newChoirId: string | null | undefined = user.choirId?.toString();
+            if (choirId !== undefined && currentUser.role === 'SUPER_ADMIN') {
+                newChoirId = choirId || null;
+                user.choirId = newChoirId as any;
+            }
+
+            // Prepare new username/email values (for uniqueness check)
+            const newUsername = username
+                ? username.toLowerCase()
+                : user.username;
+            const newEmail = email || user.email;
+
+            // Uniqueness per choir if something relevant changed
+            if (newChoirId) {
+                const duplicate = await User.findOne({
+                    _id: { $ne: user._id },
+                    choirId: newChoirId,
+                    $or: [
+                        { username: newUsername },
+                        { email: newEmail }
+                    ]
+                });
+
+                if (duplicate) {
+                    res.status(409).json({
+                        message:
+                            'Another user in this choir already uses that username or email'
+                    });
+                    return;
+                }
+            }
+
+            // Apply basic field updates
             if (name) user.name = name;
-            if (username) user.username = username.toLowerCase();
-            if (email) user.email = email;
-            if (role) user.role = role;
+            user.username = newUsername;
+            user.email = newEmail;
+
+            // Role changes:
+            if (role && currentUser.role === 'SUPER_ADMIN') {
+                user.role = role;
+            }
 
             // 🎵 instrument fields
             if (instrumentId !== undefined) {
@@ -451,10 +625,6 @@ router.put(
                 user.voice = String(voice) === 'true' || voice === true;
             }
 
-            if (choirId !== undefined) {
-                user.choirId = choirId || null;
-            }
-
             if (password) {
                 user.password = await bcrypt.hash(password, 10);
             }
@@ -466,6 +636,7 @@ router.put(
                 updatedUser: user.toJSON()
             });
         } catch (error: any) {
+            console.error('Update user error:', error);
             res.status(400).json({ message: error.message });
         }
     }
@@ -475,11 +646,17 @@ router.put(
 router.delete(
     '/:id',
     verifyToken,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: RequestWithUser, res: Response): Promise<void> => {
         try {
             const user = await User.findById(req.params.id);
             if (!user) {
                 res.status(404).json({ message: 'User not found' });
+                return;
+            }
+
+            const choirError = ensureSameChoirOrSuperAdmin(req, user);
+            if (choirError) {
+                res.status(403).json({ message: choirError });
                 return;
             }
 
@@ -490,6 +667,7 @@ router.delete(
             await User.findByIdAndDelete(req.params.id);
             res.json({ message: 'User deleted successfully' });
         } catch (error: any) {
+            console.error('Delete user error:', error);
             res.status(500).json({ message: error.message });
         }
     }
