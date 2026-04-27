@@ -1,3 +1,5 @@
+// src/types/multer-storage-cloudinary.d.ts
+
 declare module 'multer-storage-cloudinary' {
     import { v2 as cloudinary } from 'cloudinary';
     import { StorageEngine } from 'multer';

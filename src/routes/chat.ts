@@ -1,5 +1,8 @@
-import express, { Request, Response } from 'express';
+// src/routes/chat.ts
+
+import express, { Response } from 'express';
 import { Types } from 'mongoose';
+
 import ChatMessage from '../models/ChatMessage';
 import Choir from '../models/Choir';
 import verifyToken, { RequestWithUser } from '../middlewares/auth';
@@ -8,62 +11,121 @@ import {
     streamUpload,
     uploadChatFile,
     uploadChatImage,
-    uploadChatMedia
+    uploadChatMedia,
 } from '../middlewares/cloudinaryStorage';
 import { VALID_MESSAGE_TYPES } from '../utils/constants';
-import { isValidMediaExtension } from '../utils/validateMimeMedia';
 import { notifyCommunity } from '../utils/notificationHelper';
 
 const router = express.Router();
 
-// Helper to build choir room name
-const getChoirRoom = (choirId: string | null | undefined) =>
+interface ChatHistoryQuery {
+    limit?: string | number;
+    before?: string;
+    choirId?: string;
+    choirKey?: string;
+}
+
+interface CreateChatMessageBody {
+    author?: string;
+    createdBy?: string;
+    content?: object;
+    type?: string;
+    fileUrl?: string;
+    filename?: string;
+    replyToId?: string;
+}
+
+interface UploadChatResponse {
+    fileUrl: string;
+    filename: string;
+    cloudinaryPublicId: string;
+}
+
+interface ReactionBody {
+    emoji?: string;
+}
+
+interface ChoirLeanResult {
+    _id: Types.ObjectId;
+}
+
+interface ChatMessageWithToJSON {
+    toJSON: () => object;
+}
+
+const getChoirRoom = (choirId: string | null | undefined): string =>
     `choir:${choirId || 'global'}`;
 
-// Resolve choirId from id/code/name (for SUPER_ADMIN history filters)
 const resolveChoirIdFromKey = async (choirKey?: string | null): Promise<string | null> => {
-    if (!choirKey) return null;
+    if (!choirKey) {
+        return null;
+    }
 
     if (Types.ObjectId.isValid(choirKey)) {
         return choirKey;
     }
 
     const choir = await Choir.findOne({
-        $or: [{ code: choirKey }, { name: choirKey }]
-    }).select('_id');
+        $or: [{ code: choirKey }, { name: choirKey }],
+    })
+        .select('_id')
+        .lean<ChoirLeanResult | null>();
 
-    return choir ? (choir as any).id : null;
+    return choir ? choir._id.toString() : null;
 };
 
-// GET HISTORY
+const getRequestChoirId = (req: RequestWithUser): string | null => {
+    if (!req.user?.choirId) {
+        return null;
+    }
+
+    return req.user.choirId.toString();
+};
+
+const getUploadFileName = (file: Express.Multer.File): string => {
+    return file.originalname || file.filename;
+};
+
+const getUploadPublicId = (file: Express.Multer.File): string => {
+    return file.filename || '';
+};
+
+const sendUploadResponse = (
+    res: Response,
+    file: Express.Multer.File,
+): void => {
+    const response: UploadChatResponse = {
+        fileUrl: file.path,
+        filename: getUploadFileName(file),
+        cloudinaryPublicId: getUploadPublicId(file),
+    };
+
+    res.status(201).json(response);
+};
+
 router.get(
     ['/', '/history'],
     verifyToken,
     async (req: RequestWithUser, res: Response): Promise<void> => {
         try {
-            const { limit = 50, before, choirId, choirKey } = req.query as {
-                limit?: string | number;
-                before?: string;
-                choirId?: string;
-                choirKey?: string;
-            };
+            const {
+                limit = 50,
+                before,
+                choirId,
+                choirKey,
+            } = req.query as ChatHistoryQuery;
 
-            const query: any = {};
+            const query: {
+                choirId?: string;
+                createdAt?: { $lt: Date };
+            } = {};
 
             if (req.user?.role === 'SUPER_ADMIN') {
                 let targetChoirId: string | null = null;
 
-                if (
-                    choirId &&
-                    typeof choirId === 'string' &&
-                    choirId.trim() !== ''
-                ) {
+                if (choirId && typeof choirId === 'string' && choirId.trim() !== '') {
                     targetChoirId = choirId;
-                } else if (
-                    choirKey &&
-                    typeof choirKey === 'string' &&
-                    choirKey.trim() !== ''
-                ) {
+                } else if (choirKey && typeof choirKey === 'string' && choirKey.trim() !== '') {
                     targetChoirId = await resolveChoirIdFromKey(choirKey);
                 } else if (req.user?.choirId) {
                     targetChoirId = req.user.choirId.toString();
@@ -73,11 +135,11 @@ router.get(
                     query.choirId = targetChoirId;
                 }
             } else if (req.user?.choirId) {
-                query.choirId = req.user.choirId;
+                query.choirId = req.user.choirId.toString();
             }
 
             if (before) {
-                query.createdAt = { $lt: new Date(before as string) };
+                query.createdAt = { $lt: new Date(before) };
             }
 
             const messages = await ChatMessage.find(query)
@@ -87,360 +149,247 @@ router.get(
                 .populate('reactions.user', 'username')
                 .populate({
                     path: 'replyTo',
-                    populate: { path: 'author', select: 'name username imageUrl' }
+                    populate: { path: 'author', select: 'name username imageUrl' },
                 });
 
             res.json(messages.reverse());
-        } catch (error: any) {
+        } catch (error) {
             console.error('History Error:', error);
+
             res.status(500).json({
                 message: 'Error retrieving messages',
-                error: error.message
             });
         }
-    }
+    },
 );
 
-// CREATE MESSAGE (Text)
 router.post(
     '/',
     verifyToken,
     setCreatedBy,
     async (req: RequestWithUser, res: Response): Promise<void> => {
         try {
-            const { content, type, fileUrl, filename, replyToId } = req.body;
-            const author = req.body.author || req.body.createdBy;
+            const body = req.body as CreateChatMessageBody;
+            const author = body.author || body.createdBy;
 
-            if (VALID_MESSAGE_TYPES && !VALID_MESSAGE_TYPES.includes(type)) {
+            if (!body.type || !VALID_MESSAGE_TYPES.includes(body.type)) {
                 res.status(400).json({ message: 'Invalid message type' });
                 return;
             }
 
-            const choirId = req.user?.choirId || null;
+            if (!author) {
+                res.status(400).json({ message: 'Author is required' });
+                return;
+            }
+
+            const choirId = getRequestChoirId(req);
 
             const message = new ChatMessage({
                 author,
                 choirId,
-                content,
-                type,
-                fileUrl,
-                filename,
-                replyTo: replyToId || null,
-                createdBy: req.body.createdBy
+                content: body.content || {},
+                type: body.type,
+                fileUrl: body.fileUrl || '',
+                filename: body.filename || '',
+                replyTo: body.replyToId || null,
+                createdBy: body.createdBy,
             });
 
             await message.save();
+
             await message.populate([
                 { path: 'author', select: 'name username imageUrl' },
                 {
                     path: 'replyTo',
-                    populate: { path: 'author', select: 'name username imageUrl' }
-                }
+                    populate: { path: 'author', select: 'name username imageUrl' },
+                },
             ]);
 
             const io = req.app.get('io');
+
             if (io) {
-                const choirRoom = getChoirRoom(
-                    (message.choirId as any)?.toString?.() || req.user?.choirId
-                );
-                io.to(choirRoom).emit('new-message', message.toJSON());
+                const choirRoom = getChoirRoom(choirId);
+                const jsonMessage = (message as ChatMessageWithToJSON).toJSON();
+
+                io.to(choirRoom).emit('new-message', jsonMessage);
             }
 
             notifyCommunity(
                 req.user?.id,
                 req.user?.username || 'User',
                 'CHAT',
-                message
+                message,
             );
 
             res.status(201).json({ message });
-        } catch (error: any) {
+        } catch (error) {
+            console.error('Create Chat Message Error:', error);
+
             res.status(500).json({
                 message: 'Error creating message',
-                error: error.message
             });
         }
-    }
+    },
 );
 
-// UPLOAD IMAGE
 router.post(
     '/upload-image',
     verifyToken,
     uploadChatImage.single('file'),
-    setCreatedBy,
     async (req: RequestWithUser, res: Response): Promise<void> => {
         try {
-            const { content, replyToId } = req.body;
-            const author = req.body.author || req.body.createdBy;
-            const choirId = req.user?.choirId || null;
-
             if (!req.file) {
                 res.status(400).json({ message: 'No image received' });
                 return;
             }
 
-            const message = new ChatMessage({
-                author,
-                choirId,
-                content: content ? JSON.parse(content) : {},
-                type: 'IMAGE',
-                fileUrl: req.file.path,
-                filename: req.file.filename,
-                replyTo: replyToId || null,
-                createdBy: req.body.createdBy
-            });
+            sendUploadResponse(res, req.file);
+        } catch (error) {
+            console.error('Upload Chat Image Error:', error);
 
-            await message.save();
-            await message.populate([
-                { path: 'author', select: 'name username imageUrl' },
-                {
-                    path: 'replyTo',
-                    populate: { path: 'author', select: 'name username imageUrl' }
-                }
-            ]);
-
-            const io = req.app.get('io');
-            if (io) {
-                const choirRoom = getChoirRoom(
-                    (message.choirId as any)?.toString?.() || req.user?.choirId
-                );
-                io.to(choirRoom).emit('new-message', message.toJSON());
-            }
-
-            notifyCommunity(
-                req.user?.id,
-                req.user?.username || 'User',
-                'CHAT',
-                message
-            );
-
-            res.status(201).json({ message });
-        } catch (error: any) {
             res.status(500).json({
                 message: 'Error uploading chat image',
-                error: error.message
             });
         }
-    }
+    },
 );
 
-// UPLOAD FILE
+router.post(
+    '/upload-media',
+    verifyToken,
+    uploadChatMedia.single('file'),
+    async (req: RequestWithUser, res: Response): Promise<void> => {
+        try {
+            if (!req.file) {
+                res.status(400).json({ message: 'No media received' });
+                return;
+            }
+
+            sendUploadResponse(res, req.file);
+        } catch (error) {
+            console.error('Upload Chat Media Error:', error);
+
+            res.status(500).json({
+                message: 'Error uploading chat media',
+            });
+        }
+    },
+);
+
 router.post(
     '/upload-file',
     verifyToken,
     uploadChatFile.single('file'),
-    setCreatedBy,
     async (req: RequestWithUser, res: Response): Promise<void> => {
         try {
-            const author = req.body.author || req.body.createdBy;
-            const choirId = req.user?.choirId || null;
-
             if (!req.file) {
                 res.status(400).json({ message: 'No file received' });
                 return;
             }
 
-            const result = await streamUpload(
+            const uploadResult = await streamUpload(
                 req.file.buffer,
                 req.file.originalname,
-                'auto'
+                'auto',
             );
 
-            const message = new ChatMessage({
-                author,
-                choirId,
-                content: {},
-                type: 'FILE',
-                fileUrl: result.secure_url,
+            const response: UploadChatResponse = {
+                fileUrl: uploadResult.secure_url,
                 filename: req.file.originalname,
-                createdBy: req.body.createdBy
-            });
+                cloudinaryPublicId: uploadResult.public_id,
+            };
 
-            await message.save();
-            await message.populate([
-                { path: 'author', select: 'name username imageUrl' },
-                {
-                    path: 'replyTo',
-                    populate: { path: 'author', select: 'name username imageUrl' }
-                }
-            ]);
+            res.status(201).json(response);
+        } catch (error) {
+            console.error('Upload Chat File Error:', error);
 
-            const io = req.app.get('io');
-            if (io) {
-                const choirRoom = getChoirRoom(
-                    (message.choirId as any)?.toString?.() || req.user?.choirId
-                );
-                io.to(choirRoom).emit('new-message', message.toJSON());
-            }
-
-            notifyCommunity(
-                req.user?.id,
-                req.user?.username || 'User',
-                'CHAT',
-                message
-            );
-
-            res.status(201).json({ message });
-        } catch (error: any) {
             res.status(500).json({
-                message: 'Internal error uploading file',
-                error: error.message
+                message: 'Error uploading chat file',
             });
         }
-    }
+    },
 );
 
-// UPLOAD MEDIA
-router.post(
-    '/upload-media',
-    verifyToken,
-    uploadChatMedia.single('file'),
-    setCreatedBy,
-    async (req: RequestWithUser, res: Response): Promise<void> => {
-        try {
-            const author = req.body.author || req.body.createdBy;
-            const choirId = req.user?.choirId || null;
-
-            if (!req.file) {
-                res.status(400).json({ message: 'No media received' });
-                return;
-            }
-            if (!isValidMediaExtension(req.file.originalname)) {
-                res.status(400).json({ message: 'Invalid extension' });
-                return;
-            }
-
-            const mime = req.file.mimetype || '';
-            const isVideo =
-                mime.includes('video') ||
-                mime.includes('mp4') ||
-                mime.includes('mov');
-            const type = isVideo ? 'VIDEO' : 'AUDIO';
-
-            const message = new ChatMessage({
-                author,
-                choirId,
-                content: {},
-                type,
-                fileUrl: req.file.path,
-                filename: req.file.originalname,
-                createdBy: req.body.createdBy
-            });
-
-            await message.save();
-            await message.populate([
-                { path: 'author', select: 'name username imageUrl' },
-                {
-                    path: 'replyTo',
-                    populate: { path: 'author', select: 'name username imageUrl' }
-                }
-            ]);
-
-            const io = req.app.get('io');
-            if (io) {
-                const choirRoom = getChoirRoom(
-                    (message.choirId as any)?.toString?.() || req.user?.choirId
-                );
-                io.to(choirRoom).emit('new-message', message.toJSON());
-            }
-
-            notifyCommunity(
-                req.user?.id,
-                req.user?.username || 'User',
-                'CHAT',
-                message
-            );
-
-            res.status(201).json({ message });
-        } catch (error: any) {
-            res.status(500).json({
-                message: 'Error uploading media',
-                error: error.message
-            });
-        }
-    }
-);
-
-// PATCH REACTION (choir-safe)
 router.patch(
-    '/:id/reaction',
+    '/:messageId/reaction',
     verifyToken,
     async (req: RequestWithUser, res: Response): Promise<void> => {
         try {
-            const messageId = req.params.id;
-            const { emoji } = req.body;
+            const { messageId } = req.params;
+            const body = req.body as ReactionBody;
             const userId = req.user?.id;
 
             if (!userId) {
-                res.status(401).json({ message: 'User not authenticated' });
+                res.status(401).json({ message: 'Unauthorized' });
+                return;
+            }
+
+            if (!body.emoji || body.emoji.trim() === '') {
+                res.status(400).json({ message: 'Emoji is required' });
                 return;
             }
 
             const message = await ChatMessage.findById(messageId);
+
             if (!message) {
                 res.status(404).json({ message: 'Message not found' });
                 return;
             }
 
-            const user = req.user;
+            const existingReactionIndex = message.reactions.findIndex((reaction) => {
+                const reactionUser = reaction.user;
 
-            // Choir scoping: non-SUPER_ADMIN cannot react to messages from other choirs
-            if (
-                user?.role !== 'SUPER_ADMIN' &&
-                user?.choirId &&
-                message.choirId &&
-                message.choirId.toString() !== user.choirId.toString()
-            ) {
-                res.status(404).json({ message: 'Message not found' });
-                return;
-            }
+                if (reactionUser instanceof Types.ObjectId) {
+                    return reactionUser.toString() === userId;
+                }
 
-            const existingIndex = message.reactions.findIndex(
-                r => r.user.toString() === userId
-            );
+                return String(reactionUser) === userId;
+            });
 
-            if (existingIndex > -1) {
-                if (message.reactions[existingIndex].emoji === emoji) {
-                    message.reactions.splice(existingIndex, 1);
+            if (existingReactionIndex >= 0) {
+                const currentReaction = message.reactions[existingReactionIndex];
+
+                if (currentReaction.emoji === body.emoji) {
+                    message.reactions.splice(existingReactionIndex, 1);
                 } else {
-                    message.reactions[existingIndex].emoji = emoji;
+                    currentReaction.emoji = body.emoji;
                 }
             } else {
-                // @ts-ignore - Mongoose Types handling
-                message.reactions.push({ user: userId, emoji });
+                message.reactions.push({
+                    user: new Types.ObjectId(userId),
+                    emoji: body.emoji,
+                });
             }
 
             await message.save();
 
             await message.populate([
                 { path: 'author', select: 'name username imageUrl' },
+                { path: 'reactions.user', select: 'username name imageUrl' },
                 {
                     path: 'replyTo',
-                    populate: { path: 'author', select: 'name username imageUrl' }
+                    populate: { path: 'author', select: 'name username imageUrl' },
                 },
-                {
-                    path: 'reactions.user',
-                    select: 'username'
-                }
             ]);
 
             const io = req.app.get('io');
+
             if (io) {
-                const choirRoom = getChoirRoom(
-                    (message.choirId as any)?.toString?.() || req.user?.choirId
-                );
-                io.to(choirRoom).emit('message-updated', message.toJSON());
+                const choirRoom = getChoirRoom(getRequestChoirId(req));
+                const jsonMessage = (message as ChatMessageWithToJSON).toJSON();
+
+                io.to(choirRoom).emit('message-updated', jsonMessage);
             }
 
             res.json({ message });
-        } catch (error: any) {
+        } catch (error) {
+            console.error('Toggle Reaction Error:', error);
+
             res.status(500).json({
-                message: 'Error updating reactions',
-                error: error.message
+                message: 'Error updating reaction',
             });
         }
-    }
+    },
 );
 
 export default router;
