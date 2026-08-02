@@ -1,185 +1,110 @@
-import mongoose, { Schema, Document, Types } from 'mongoose';
+// src/models/ChatMessage.ts
 
-export type MessageType = 'TEXT' | 'IMAGE' | 'FILE' | 'MEDIA' | 'REACTION' | 'AUDIO' | 'VIDEO';
+import { Document, Schema, Types, model } from 'mongoose';
+import {
+    assertSameChoirRelation,
+    assertSameChoirRelations
+} from '../services/tenantRelation.service';
+import type { StoredJsonValue } from '../types/content.types';
+import User from './User';
+
+export type MessageType =
+    | 'TEXT'
+    | 'IMAGE'
+    | 'FILE'
+    | 'MEDIA'
+    | 'REACTION'
+    | 'AUDIO'
+    | 'VIDEO';
 
 export interface ChatReaction {
     emoji: string;
     user: Types.ObjectId;
 }
 
-export interface ChatReplyPreview {
-    id: string;
-    username: string;
-    textPreview: string;
-}
-
-export interface IChatMessage extends Document {
+export interface IChatMessage extends Document<Types.ObjectId> {
     author: Types.ObjectId;
-    choirId?: Types.ObjectId | null;
-
-    content: any;
+    choirId: Types.ObjectId;
+    content: StoredJsonValue;
     type: MessageType;
-
     fileUrl?: string;
     filename?: string;
     imageUrl?: string;
     audioUrl?: string;
     imagePublicId?: string;
-
     reactions: ChatReaction[];
-
-    replyTo?: Types.ObjectId | IChatMessage | null;
-
+    replyTo?: Types.ObjectId | null;
     createdBy: Types.ObjectId;
     createdAt: Date;
     updatedAt: Date;
 }
 
-const MAX_PREVIEW_LENGTH = 120;
-
-function getTextPreviewFromContent(content: any): string {
-    if (!content) return '';
-
-    if (typeof content === 'string') {
-        const trimmed = content.trim();
-        if (!trimmed) return '';
-        return trimmed.length > MAX_PREVIEW_LENGTH
-            ? trimmed.slice(0, MAX_PREVIEW_LENGTH) + '…'
-            : trimmed;
-    }
-
-    if (typeof content === 'object') {
-        const root: any = content;
-
-        const texts: string[] = [];
-
-        const walk = (node: any) => {
-            if (!node) return;
-
-            if (node.type === 'text' && typeof node.text === 'string') {
-                texts.push(node.text);
-            }
-
-            if (Array.isArray(node.content)) {
-                node.content.forEach(walk);
-            }
-        };
-
-        if (Array.isArray(root.content)) {
-            root.content.forEach(walk);
-        }
-
-        const joined = texts.join(' ').replace(/\s+/g, ' ').trim();
-        if (!joined) return '';
-
-        return joined.length > MAX_PREVIEW_LENGTH
-            ? joined.slice(0, MAX_PREVIEW_LENGTH) + '…'
-            : joined;
-    }
-
-    return '';
-}
-
 const ChatMessageSchema = new Schema<IChatMessage>(
     {
         author: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-
         choirId: {
             type: Schema.Types.ObjectId,
             ref: 'Choir',
-            default: null,
+            required: true
         },
-
         content: { type: Schema.Types.Mixed, required: true },
         type: {
             type: String,
             enum: ['TEXT', 'IMAGE', 'FILE', 'MEDIA', 'REACTION', 'AUDIO', 'VIDEO'],
-            required: true,
+            required: true
         },
-
         fileUrl: { type: String, default: '' },
         filename: { type: String, default: '' },
         imageUrl: { type: String, default: '' },
         audioUrl: { type: String, default: '' },
         imagePublicId: { type: String, default: '' },
-
         reactions: [
             {
                 emoji: { type: String, required: true },
-                user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-            },
+                user: { type: Schema.Types.ObjectId, ref: 'User', required: true }
+            }
         ],
-
         replyTo: {
             type: Schema.Types.ObjectId,
             ref: 'ChatMessage',
-            default: null,
+            default: null
         },
-
-        createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true }
     },
     {
         timestamps: true,
-    },
+        versionKey: false,
+        toJSON: { virtuals: true },
+        toObject: { virtuals: true }
+    }
 );
 
-ChatMessageSchema.set('toJSON', {
-    virtuals: true,
-    transform: (_doc, ret: any) => {
-        ret.id = ret._id?.toString();
-        delete ret._id;
-        delete ret.__v;
+ChatMessageSchema.pre('validate', async function validateTenantRelations(this: IChatMessage): Promise<void> {
+    await assertSameChoirRelation(User, this.author, this.choirId, 'author');
+    await assertSameChoirRelation(User, this.createdBy, this.choirId, 'createdBy');
+    await assertSameChoirRelations(
+        User,
+        this.reactions.map((reaction) => reaction.user),
+        this.choirId,
+        'reactions.user'
+    );
 
-        if (ret.choirId) {
-            ret.choirId = ret.choirId.toString();
-        }
+    if (!this.replyTo) {
+        return;
+    }
 
-        if (Array.isArray(ret.reactions)) {
-            ret.reactions = ret.reactions.map((r: any) => {
-                const user = r.user;
-                return {
-                    emoji: r.emoji,
-                    user: typeof user === 'object' && user !== null ? user._id?.toString() : user,
-                    username:
-                        typeof user === 'object' && user !== null
-                            ? user.username
-                            : undefined,
-                };
-            });
-        }
-
-        if (ret.replyTo && typeof ret.replyTo === 'object') {
-            const reply = ret.replyTo;
-
-            const replyId: string | undefined = reply._id
-                ? reply._id.toString()
-                : typeof reply.id === 'string'
-                    ? reply.id
-                    : undefined;
-
-            const replyAuthor = reply.author || {};
-            const replyUsername: string =
-                typeof replyAuthor === 'object' && replyAuthor !== null
-                    ? replyAuthor.username || 'Usuario'
-                    : 'Usuario';
-
-            const preview = getTextPreviewFromContent(reply.content);
-            const textPreview = preview || '[mensaje]';
-
-            ret.replyTo = replyId
-                ? {
-                    id: replyId,
-                    username: replyUsername,
-                    textPreview,
-                }
-                : null;
-        } else {
-            ret.replyTo = null;
-        }
-
-        return ret;
-    },
+    const ChatMessageModel = model<IChatMessage>('ChatMessage');
+    await assertSameChoirRelation(
+        ChatMessageModel,
+        this.replyTo,
+        this.choirId,
+        'replyTo'
+    );
 });
 
-const ChatMessage = mongoose.model<IChatMessage>('ChatMessage', ChatMessageSchema);
+ChatMessageSchema.index({ choirId: 1, createdAt: -1 });
+ChatMessageSchema.index({ choirId: 1, author: 1, createdAt: -1 });
+ChatMessageSchema.index({ choirId: 1, replyTo: 1 });
+
+const ChatMessage = model<IChatMessage>('ChatMessage', ChatMessageSchema);
 export default ChatMessage;

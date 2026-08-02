@@ -1,39 +1,42 @@
-import { Schema, model, Document, Types } from 'mongoose';
+// src/models/Settings.ts
 
-export interface ISettings extends Document {
+import { Document, Schema, Types, model } from 'mongoose';
+import type { StoredJsonValue } from '../types/content.types';
+
+export interface SettingsSocials {
+    facebook: string;
+    instagram: string;
+    youtube: string;
+    whatsapp: string;
+    email: string;
+}
+
+export interface SettingsHomeLegends {
+    principal: string;
+    secondary: string;
+}
+
+export interface ISettings extends Document<Types.ObjectId> {
     webTitle: string;
     contactPhone: string;
     logoUrl?: string;
-    logoPublicId?: string;
-
-    socials: {
-        facebook: string;
-        instagram: string;
-        youtube: string;
-        whatsapp: string;
-        email: string;
-    };
-
-    homeLegends: {
-        principal: string;
-        secondary: string;
-    };
-
-    history: any;
-
-    choirId?: Types.ObjectId;
-
+    logoPublicId?: string | null;
+    socials: SettingsSocials;
+    homeLegends: SettingsHomeLegends;
+    history: StoredJsonValue;
+    choirId: Types.ObjectId;
     createdBy?: Types.ObjectId;
     updatedBy?: Types.ObjectId;
+    createdAt?: Date;
+    updatedAt?: Date;
 }
 
 const SettingsSchema = new Schema<ISettings>(
     {
-        webTitle: { type: String, default: 'Coro App' },
+        webTitle: { type: String, default: 'Coro App', trim: true },
         contactPhone: { type: String, default: '' },
         logoUrl: { type: String, default: '' },
         logoPublicId: { type: String, default: null },
-
         socials: {
             facebook: { type: String, default: '' },
             instagram: { type: String, default: '' },
@@ -41,36 +44,31 @@ const SettingsSchema = new Schema<ISettings>(
             whatsapp: { type: String, default: '' },
             email: { type: String, default: '' }
         },
-
         homeLegends: {
             principal: { type: String, default: '' },
             secondary: { type: String, default: '' }
         },
-
         history: { type: Schema.Types.Mixed, default: {} },
-
         choirId: {
             type: Schema.Types.ObjectId,
             ref: 'Choir',
-            required: false,
-            index: true
+            required: true
         },
-
         createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
         updatedBy: { type: Schema.Types.ObjectId, ref: 'User' }
     },
-    { timestamps: true }
+    {
+        timestamps: true,
+        versionKey: false,
+        toJSON: { virtuals: true },
+        toObject: { virtuals: true }
+    }
 );
 
-SettingsSchema.set('toJSON', {
-    virtuals: true,
-    versionKey: false,
-    transform: function (_doc, ret) {
-        ret.id = ret._id;
-        delete ret._id;
-        return ret;
-    }
-});
+SettingsSchema.index(
+    { choirId: 1 },
+    { unique: true, name: 'settings_choir_unique' }
+);
 
 const Settings = model<ISettings>('Settings', SettingsSchema);
 export default Settings;

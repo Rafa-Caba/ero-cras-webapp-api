@@ -9,7 +9,11 @@ export interface AuthRequestBody {
     readonly username?: RequestBodyValue;
     readonly email?: RequestBodyValue;
     readonly password?: RequestBodyValue;
+    readonly choirCode?: RequestBodyValue;
+    readonly identifier?: RequestBodyValue;
     readonly refreshToken?: RequestBodyValue;
+    readonly currentPassword?: RequestBodyValue;
+    readonly newPassword?: RequestBodyValue;
 }
 
 export interface BootstrapSuperAdminInput {
@@ -19,9 +23,39 @@ export interface BootstrapSuperAdminInput {
     readonly password: string;
 }
 
+export interface TenantLoginInput {
+    readonly choirCode: string;
+    readonly identifier: string;
+    readonly password: string;
+}
+
+export interface PlatformLoginInput {
+    readonly identifier: string;
+    readonly password: string;
+}
+
+export interface ChangePasswordInput {
+    readonly currentPassword: string;
+    readonly newPassword: string;
+}
+
 export interface RefreshSessionInput {
     readonly refreshToken: string;
 }
+
+const requireBody = (
+    body: AuthRequestBody | undefined
+): AuthRequestBody => {
+    if (!body) {
+        throw new AppError(
+            400,
+            'VALIDATION_ERROR',
+            'A JSON request body is required'
+        );
+    }
+
+    return body;
+};
 
 const requireText = (
     value: RequestBodyValue | undefined,
@@ -83,7 +117,22 @@ const validateUsername = (username: string): string => {
     return normalizedUsername;
 };
 
-const validatePassword = (password: string): string => {
+const validateChoirCode = (choirCode: string): string => {
+    const normalizedChoirCode = choirCode.toLowerCase();
+    const choirCodePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+    if (!choirCodePattern.test(normalizedChoirCode)) {
+        throw new AppError(
+            400,
+            'VALIDATION_ERROR',
+            'choirCode must use lowercase letters, numbers, and single hyphens'
+        );
+    }
+
+    return normalizedChoirCode;
+};
+
+const validatePasswordStrength = (password: string): string => {
     const hasUppercase = /[A-Z]/.test(password);
     const hasLowercase = /[a-z]/.test(password);
     const hasNumber = /[0-9]/.test(password);
@@ -103,43 +152,82 @@ const validatePassword = (password: string): string => {
 export const parseBootstrapSuperAdminBody = (
     body: AuthRequestBody | undefined
 ): BootstrapSuperAdminInput => {
-    if (!body) {
-        throw new AppError(
-            400,
-            'VALIDATION_ERROR',
-            'A JSON request body is required'
-        );
-    }
-    const name = requireText(body.name, 'name', 2, 100);
+    const requestBody = requireBody(body);
+    const name = requireText(requestBody.name, 'name', 2, 100);
     const username = validateUsername(
-        requireText(body.username, 'username', 3, 50)
+        requireText(requestBody.username, 'username', 3, 50)
     );
-    const email = validateEmail(requireText(body.email, 'email', 5, 254));
-    const password = validatePassword(
-        requireText(body.password, 'password', 12, 128)
+    const email = validateEmail(
+        requireText(requestBody.email, 'email', 5, 254)
+    );
+    const password = validatePasswordStrength(
+        requireText(requestBody.password, 'password', 12, 128)
     );
 
+    return { name, username, email, password };
+};
+
+export const parseTenantLoginBody = (
+    body: AuthRequestBody | undefined
+): TenantLoginInput => {
+    const requestBody = requireBody(body);
+
     return {
-        name,
-        username,
-        email,
-        password
+        choirCode: validateChoirCode(
+            requireText(requestBody.choirCode, 'choirCode', 2, 60)
+        ),
+        identifier: requireText(
+            requestBody.identifier,
+            'identifier',
+            3,
+            254
+        ).toLowerCase(),
+        password: requireText(requestBody.password, 'password', 1, 128)
+    };
+};
+
+export const parsePlatformLoginBody = (
+    body: AuthRequestBody | undefined
+): PlatformLoginInput => {
+    const requestBody = requireBody(body);
+
+    return {
+        identifier: requireText(
+            requestBody.identifier,
+            'identifier',
+            3,
+            254
+        ).toLowerCase(),
+        password: requireText(requestBody.password, 'password', 1, 128)
+    };
+};
+
+export const parseChangePasswordBody = (
+    body: AuthRequestBody | undefined
+): ChangePasswordInput => {
+    const requestBody = requireBody(body);
+
+    return {
+        currentPassword: requireText(
+            requestBody.currentPassword,
+            'currentPassword',
+            1,
+            128
+        ),
+        newPassword: validatePasswordStrength(
+            requireText(requestBody.newPassword, 'newPassword', 12, 128)
+        )
     };
 };
 
 export const parseRefreshSessionBody = (
     body: AuthRequestBody | undefined
 ): RefreshSessionInput => {
-    if (!body) {
-        throw new AppError(
-            400,
-            'VALIDATION_ERROR',
-            'A JSON request body is required'
-        );
-    }
+    const requestBody = requireBody(body);
+
     return {
         refreshToken: requireText(
-            body.refreshToken,
+            requestBody.refreshToken,
             'refreshToken',
             20,
             4096

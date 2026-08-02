@@ -4,6 +4,7 @@ import { authenticate } from './authenticate';
 import { loadAuthenticatedUser } from './loadAuthenticatedUser';
 import { requireActiveUser } from './requireActiveUser';
 import { requireActiveChoir } from './requireActiveChoir';
+import { requirePasswordChanged } from './requirePasswordChanged';
 import {
     requireRouteTenantContext,
     resolveRouteTargetChoir,
@@ -16,11 +17,16 @@ export type {
     RequestWithUser
 } from '../types/auth.types';
 
-export const verifyPlatformToken = [
+export const verifySessionToken = [
     authenticate,
     loadAuthenticatedUser,
     requireActiveUser,
     requireActiveChoir
+];
+
+export const verifyPlatformToken = [
+    ...verifySessionToken,
+    requirePasswordChanged
 ];
 
 export const verifyTenantToken = [

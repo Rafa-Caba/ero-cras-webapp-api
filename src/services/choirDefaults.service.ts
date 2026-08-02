@@ -1,6 +1,7 @@
 // src/services/choirDefaults.service.ts
 
 import { Types } from 'mongoose';
+import Instrument from '../models/Instrument';
 import Settings from '../models/Settings';
 import Theme from '../models/Theme';
 
@@ -74,6 +75,37 @@ export const createDefaultThemesForChoir = async (
             buttonTextColor: '#FFFFFF',
             secondaryTextColor: '#9CA3AF',
             borderColor: '#1F2937',
+            choirId
+        }
+    ]);
+};
+
+export const createDefaultInstrumentsForChoir = async (
+    choirId: Types.ObjectId
+): Promise<void> => {
+    const existingCount = await Instrument.countDocuments({ choirId });
+
+    if (existingCount > 0) {
+        return;
+    }
+
+    await Instrument.insertMany([
+        {
+            name: 'Voz',
+            slug: 'voice',
+            category: 'voice',
+            iconKey: 'mic',
+            isActive: true,
+            order: 1,
+            choirId
+        },
+        {
+            name: 'Piano',
+            slug: 'piano',
+            category: 'keyboard',
+            iconKey: 'piano',
+            isActive: true,
+            order: 2,
             choirId
         }
     ]);

@@ -1,43 +1,46 @@
-import { Schema, model, Document, Types } from 'mongoose';
+// src/models/Announcement.ts
 
-export interface IAnnouncement extends Document {
+import { Document, Schema, Types, model } from 'mongoose';
+import type { StoredJsonValue } from '../types/content.types';
+
+export interface IAnnouncement extends Document<Types.ObjectId> {
     title: string;
-    content: any;
+    content: StoredJsonValue;
     imageUrl?: string;
-    imagePublicId?: string;
+    imagePublicId?: string | null;
     isPublic: boolean;
-    choirId?: Types.ObjectId;
+    choirId: Types.ObjectId;
     createdBy?: Types.ObjectId;
     updatedBy?: Types.ObjectId;
+    createdAt?: Date;
+    updatedAt?: Date;
 }
 
 const AnnouncementSchema = new Schema<IAnnouncement>(
     {
-        title: { type: String, required: true },
+        title: { type: String, required: true, trim: true },
         content: { type: Schema.Types.Mixed, required: true },
         imageUrl: { type: String, default: '' },
         imagePublicId: { type: String, default: null },
         isPublic: { type: Boolean, default: false },
-
-        choirId: { type: Schema.Types.ObjectId, ref: 'Choir', default: null },
-
+        choirId: {
+            type: Schema.Types.ObjectId,
+            ref: 'Choir',
+            required: true
+        },
         createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
         updatedBy: { type: Schema.Types.ObjectId, ref: 'User' }
     },
-    { timestamps: true }
+    {
+        timestamps: true,
+        versionKey: false,
+        toJSON: { virtuals: true },
+        toObject: { virtuals: true }
+    }
 );
 
-AnnouncementSchema.set('toJSON', {
-    virtuals: true,
-    versionKey: false,
-    transform: function (_doc, ret: any) {
-        if (ret._id) {
-            ret.id = ret._id.toString();
-            delete ret._id;
-        }
-        return ret;
-    }
-});
+AnnouncementSchema.index({ choirId: 1, createdAt: -1 });
+AnnouncementSchema.index({ choirId: 1, isPublic: 1, createdAt: -1 });
 
 const Announcement = model<IAnnouncement>('Announcement', AnnouncementSchema);
 export default Announcement;

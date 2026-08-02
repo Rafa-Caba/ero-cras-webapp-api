@@ -1,68 +1,73 @@
-import { Schema, model, Document, Types } from 'mongoose';
+// src/models/BlogPost.ts
 
-export interface IBlogPost extends Document {
+import { Document, Schema, Types, model } from 'mongoose';
+import { assertSameChoirRelation, assertSameChoirRelations } from '../services/tenantRelation.service';
+import type { StoredJsonValue } from '../types/content.types';
+import User from './User';
+
+export interface BlogComment {
+    author: string;
+    text: StoredJsonValue;
+    date: Date;
+}
+
+export interface IBlogPost extends Document<Types.ObjectId> {
     title: string;
-    content: any;
+    content: StoredJsonValue;
     imageUrl?: string;
-    imagePublicId?: string;
+    imagePublicId?: string | null;
     isPublic: boolean;
-
     author: Types.ObjectId;
-    choirId?: Types.ObjectId;
-
-    // Likes & Comments
+    choirId: Types.ObjectId;
     likes: number;
     likesUsers: Types.ObjectId[];
-    comments: Array<{
-        author: string;
-        text: any;
-        date: Date;
-    }>;
-
+    comments: BlogComment[];
     createdBy?: Types.ObjectId;
     updatedBy?: Types.ObjectId;
-
     createdAt: Date;
     updatedAt: Date;
 }
 
 const BlogPostSchema = new Schema<IBlogPost>(
     {
-        title: { type: String, required: true },
+        title: { type: String, required: true, trim: true },
         content: { type: Schema.Types.Mixed, required: true },
         imageUrl: { type: String, default: '' },
-        imagePublicId: { type: String, default: '' },
+        imagePublicId: { type: String, default: null },
         isPublic: { type: Boolean, default: false },
-
         author: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-        choirId: { type: Schema.Types.ObjectId, ref: 'Choir', default: null },
-
-        likes: { type: Number, default: 0 },
+        choirId: {
+            type: Schema.Types.ObjectId,
+            ref: 'Choir',
+            required: true
+        },
+        likes: { type: Number, default: 0, min: 0 },
         likesUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
-
-        comments: [{
-            author: String,
-            text: Schema.Types.Mixed,
-            date: { type: Date, default: Date.now }
-        }],
-
+        comments: [
+            {
+                author: { type: String, required: true, trim: true },
+                text: { type: Schema.Types.Mixed, required: true },
+                date: { type: Date, default: Date.now }
+            }
+        ],
         createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
         updatedBy: { type: Schema.Types.ObjectId, ref: 'User' }
     },
-    { timestamps: true }
+    {
+        timestamps: true,
+        versionKey: false,
+        toJSON: { virtuals: true },
+        toObject: { virtuals: true }
+    }
 );
 
-BlogPostSchema.set('toJSON', {
-    virtuals: true,
-    versionKey: false,
-    transform: function (_doc, ret: any) {
-        if (ret._id) {
-            ret.id = ret._id.toString();
-            delete ret._id;
-        }
-        return ret;
-    }
+BlogPostSchema.pre('validate', async function validateTenantRelations(this: IBlogPost): Promise<void> {
+    await assertSameChoirRelation(User, this.author, this.choirId, 'author');
+    await assertSameChoirRelations(User, this.likesUsers, this.choirId, 'likesUsers');
 });
+
+BlogPostSchema.index({ choirId: 1, createdAt: -1 });
+BlogPostSchema.index({ choirId: 1, isPublic: 1, createdAt: -1 });
 
 const BlogPost = model<IBlogPost>('BlogPost', BlogPostSchema);
 export default BlogPost;

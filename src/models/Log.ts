@@ -1,14 +1,23 @@
-import { Schema, model, Document, Types } from 'mongoose';
+// src/models/Log.ts
 
-export interface ILog extends Document {
-    action: 'create' | 'update' | 'delete' | 'add_reaction' | 'remove_reaction';
+import { Document, Schema, Types, model } from 'mongoose';
+import type { StoredJsonObject } from '../types/content.types';
+
+export type LogAction =
+    | 'create'
+    | 'update'
+    | 'delete'
+    | 'add_reaction'
+    | 'remove_reaction';
+
+export interface ILog extends Document<Types.ObjectId> {
+    action: LogAction;
     collectionName: string;
     referenceId: Types.ObjectId;
     user: Types.ObjectId;
     choirId: Types.ObjectId;
-
     description?: string;
-    changes?: Record<string, any>;
+    changes?: StoredJsonObject;
     createdAt?: Date;
 }
 
@@ -19,49 +28,24 @@ const LogSchema = new Schema<ILog>(
             enum: ['create', 'update', 'delete', 'add_reaction', 'remove_reaction'],
             required: true
         },
-        collectionName: {
-            type: String,
-            required: true
-        },
-        referenceId: {
-            type: Schema.Types.ObjectId,
-            required: true
-        },
-        user: {
-            type: Schema.Types.ObjectId,
-            ref: 'User',
-            required: true
-        },
-        choirId: {
-            type: Schema.Types.ObjectId,
-            ref: 'Choir',
-            required: true
-        },
-        description: {
-            type: String,
-            default: ''
-        },
-        changes: {
-            type: Schema.Types.Mixed,
-            default: {}
-        }
+        collectionName: { type: String, required: true, trim: true },
+        referenceId: { type: Schema.Types.ObjectId, required: true },
+        user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        choirId: { type: Schema.Types.ObjectId, ref: 'Choir', required: true },
+        description: { type: String, default: '' },
+        changes: { type: Schema.Types.Mixed, default: {} }
     },
     {
         timestamps: { createdAt: true, updatedAt: false },
-        versionKey: false
+        versionKey: false,
+        toJSON: { virtuals: true },
+        toObject: { virtuals: true }
     }
 );
 
-LogSchema.set('toJSON', {
-    virtuals: true,
-    versionKey: false,
-    transform: function (_doc, ret) {
-        ret.id = ret._id;
-        delete ret._id;
-        return ret;
-    }
-});
+LogSchema.index({ choirId: 1, createdAt: -1 });
+LogSchema.index({ choirId: 1, user: 1, createdAt: -1 });
+LogSchema.index({ choirId: 1, collectionName: 1, referenceId: 1 });
 
 const Log = model<ILog>('Log', LogSchema);
-
 export default Log;

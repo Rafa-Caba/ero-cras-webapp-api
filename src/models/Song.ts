@@ -1,16 +1,18 @@
-import { Schema, model, Document, Types } from 'mongoose';
+// src/models/Song.ts
 
-export interface ISong extends Document {
+import { Document, Schema, Types, model } from 'mongoose';
+import { assertSameChoirRelation } from '../services/tenantRelation.service';
+import type { StoredJsonValue } from '../types/content.types';
+import SongType from './SongType';
+
+export interface ISong extends Document<Types.ObjectId> {
     title: string;
     composer?: string;
-    content: any;
+    content: StoredJsonValue;
     audioUrl?: string;
-
     songTypeId?: Types.ObjectId | null;
     songTypeName?: string;
-
-    choirId?: Types.ObjectId | null;
-
+    choirId: Types.ObjectId;
     createdBy?: Types.ObjectId;
     updatedBy?: Types.ObjectId;
     createdAt?: Date;
@@ -23,40 +25,38 @@ const SongSchema = new Schema<ISong>(
         composer: { type: String, default: '', trim: true },
         content: { type: Schema.Types.Mixed, required: true },
         audioUrl: { type: String, default: '' },
-
         songTypeId: {
             type: Schema.Types.ObjectId,
             ref: 'SongType',
             default: null
         },
-
         choirId: {
             type: Schema.Types.ObjectId,
             ref: 'Choir',
-            default: null,
-            index: true
+            required: true
         },
-
         createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
         updatedBy: { type: Schema.Types.ObjectId, ref: 'User' }
     },
-    { timestamps: true }
+    {
+        timestamps: true,
+        versionKey: false,
+        toJSON: { virtuals: true },
+        toObject: { virtuals: true }
+    }
 );
 
-SongSchema.set('toJSON', {
-    virtuals: true,
-    versionKey: false,
-    transform: (_doc, ret: any) => {
-        ret.id = ret._id.toString();
-        delete ret._id;
-
-        if (ret.choirId && typeof ret.choirId === 'object' && ret.choirId.toString) {
-            ret.choirId = ret.choirId.toString();
-        }
-
-        return ret;
-    }
+SongSchema.pre('validate', async function validateSongTypeRelation(this: ISong): Promise<void> {
+    await assertSameChoirRelation(
+        SongType,
+        this.songTypeId,
+        this.choirId,
+        'songTypeId'
+    );
 });
+
+SongSchema.index({ choirId: 1, title: 1 });
+SongSchema.index({ choirId: 1, songTypeId: 1, title: 1 });
 
 export const Song = model<ISong>('Song', SongSchema);
 export default Song;

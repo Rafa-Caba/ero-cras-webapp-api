@@ -1,9 +1,10 @@
-import { Schema, model, Document, Types } from 'mongoose';
+// src/models/Theme.ts
 
-export interface ITheme extends Document {
+import { Document, Schema, Types, model } from 'mongoose';
+
+export interface ITheme extends Document<Types.ObjectId> {
     name: string;
     isDark: boolean;
-
     primaryColor: string;
     accentColor: string;
     backgroundColor: string;
@@ -14,21 +15,17 @@ export interface ITheme extends Document {
     buttonTextColor: string;
     secondaryTextColor: string;
     borderColor: string;
-
-    choirId?: Types.ObjectId | null;
-
+    choirId: Types.ObjectId;
     createdBy?: Types.ObjectId;
     updatedBy?: Types.ObjectId;
-
     createdAt?: Date;
     updatedAt?: Date;
 }
 
 const ThemeSchema = new Schema<ITheme>(
     {
-        name: { type: String, required: true },
+        name: { type: String, required: true, trim: true },
         isDark: { type: Boolean, default: false },
-
         primaryColor: { type: String, required: true },
         accentColor: { type: String, required: true },
         backgroundColor: { type: String, required: true },
@@ -39,39 +36,26 @@ const ThemeSchema = new Schema<ITheme>(
         buttonTextColor: { type: String, default: '#ffffff' },
         secondaryTextColor: { type: String, default: '#6c757d' },
         borderColor: { type: String, default: '#dee2e6' },
-
         choirId: {
             type: Schema.Types.ObjectId,
             ref: 'Choir',
-            default: null,
-            index: true
+            required: true
         },
-
         createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
         updatedBy: { type: Schema.Types.ObjectId, ref: 'User' }
     },
     {
-        timestamps: true
+        timestamps: true,
+        versionKey: false,
+        toJSON: { virtuals: true },
+        toObject: { virtuals: true }
     }
 );
 
-// Unique per choir (or global when choirId is null)
-ThemeSchema.index({ name: 1, choirId: 1 }, { unique: true });
-
-ThemeSchema.set('toJSON', {
-    virtuals: true,
-    versionKey: false,
-    transform: (_doc, ret: any) => {
-        ret.id = ret._id.toString();
-        delete ret._id;
-
-        if (ret.choirId && typeof ret.choirId === 'object' && ret.choirId.toString) {
-            ret.choirId = ret.choirId.toString();
-        }
-
-        return ret;
-    }
-});
+ThemeSchema.index(
+    { choirId: 1, name: 1 },
+    { unique: true, name: 'theme_choir_name_unique' }
+);
 
 const Theme = model<ITheme>('Theme', ThemeSchema);
 export default Theme;

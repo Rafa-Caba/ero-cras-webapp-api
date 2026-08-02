@@ -9,8 +9,13 @@ import { env } from '../config/env';
 import { AppError } from '../errors/AppError';
 import Choir from '../models/Choir';
 import PlatformState from '../models/PlatformState';
-import RefreshToken from '../models/RefreshToken';
 import User from '../models/User';
+import {
+    createDefaultInstrumentsForChoir,
+    createDefaultThemesForChoir,
+    ensureDefaultSettingsForChoir
+} from './choirDefaults.service';
+import { syncApplicationIndexes } from './indexSync.service';
 import type { UserRole } from '../types/roles.types';
 import { backupCurrentDatabase } from './databaseBackup.service';
 
@@ -143,6 +148,30 @@ const writeCredentials = async (
     );
 };
 
+const clearCurrentDatabase = async (): Promise<void> => {
+    const database = mongoose.connection.db;
+
+    if (!database) {
+        throw new AppError(
+            500,
+            'DATABASE_NOT_CONNECTED',
+            'A database connection is required before clearing application data'
+        );
+    }
+
+    const collections = await database
+        .listCollections({}, { nameOnly: true })
+        .toArray();
+
+    for (const collectionInfo of collections) {
+        if (collectionInfo.name.startsWith('system.')) {
+            continue;
+        }
+
+        await database.collection(collectionInfo.name).deleteMany({});
+    }
+};
+
 export interface ResetAndSeedResult {
     readonly backupDirectory: string;
     readonly credentialsFile: string;
@@ -152,14 +181,9 @@ export const resetAndSeedDatabase = async (): Promise<ResetAndSeedResult> => {
     verifyResetPermission();
 
     const backupDirectory = await backupCurrentDatabase();
-    await mongoose.connection.dropDatabase();
+    await clearCurrentDatabase();
 
-    await Promise.all([
-        Choir.syncIndexes(),
-        User.syncIndexes(),
-        RefreshToken.syncIndexes(),
-        PlatformState.syncIndexes()
-    ]);
+    await syncApplicationIndexes();
 
     const [choirA, choirB] = await Choir.create([
         {
@@ -174,6 +198,15 @@ export const resetAndSeedDatabase = async (): Promise<ResetAndSeedResult> => {
             description: 'Tenant controlado para pruebas cruzadas',
             isActive: true
         }
+    ]);
+
+    await Promise.all([
+        ensureDefaultSettingsForChoir(choirA._id),
+        ensureDefaultSettingsForChoir(choirB._id),
+        createDefaultThemesForChoir(choirA._id),
+        createDefaultThemesForChoir(choirB._id),
+        createDefaultInstrumentsForChoir(choirA._id),
+        createDefaultInstrumentsForChoir(choirB._id)
     ]);
 
     const superAdminPassword = generatePassword();

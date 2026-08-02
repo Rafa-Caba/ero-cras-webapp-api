@@ -4,18 +4,22 @@ import bcrypt from 'bcrypt';
 import { timingSafeEqual } from 'crypto';
 import { env } from '../config/env';
 import { AppError } from '../errors/AppError';
-import Choir, { IChoir } from '../models/Choir';
+import Choir, { IChoir, normalizeChoirCode } from '../models/Choir';
 import PlatformState from '../models/PlatformState';
 import RefreshToken from '../models/RefreshToken';
-import User, { IUser } from '../models/User';
+import User, { IUser, normalizeUserIdentifier } from '../models/User';
 import type {
     AuthSessionResponse,
     AuthenticatedChoir,
     AuthenticatedContext,
     AuthenticatedUser
 } from '../types/auth.types';
-import { isUserRole } from '../types/roles.types';
-import type { BootstrapSuperAdminInput } from '../validations/schemas/auth.schemas';
+import type {
+    BootstrapSuperAdminInput,
+    ChangePasswordInput,
+    PlatformLoginInput,
+    TenantLoginInput
+} from '../validations/schemas/auth.schemas';
 import {
     createSessionTokenPair,
     hashRefreshToken,
@@ -23,8 +27,11 @@ import {
 } from './token.service';
 
 const BOOTSTRAP_PLATFORM_ACCOUNT_KEY = 'bootstrap-super-admin';
+const PASSWORD_HASH_ROUNDS = 12;
 
-const serializeUser = (user: IUser): AuthenticatedUser => {
+export const serializeAuthenticatedUser = (
+    user: IUser
+): AuthenticatedUser => {
     return {
         id: user._id.toString(),
         name: user.name,
@@ -74,7 +81,8 @@ const persistRefreshToken = async (
 };
 
 const createSessionResponse = async (
-    user: IUser
+    user: IUser,
+    choir: IChoir | null
 ): Promise<AuthSessionResponse> => {
     const tokenPair = createSessionTokenPair({
         userId: user._id.toString(),
@@ -91,8 +99,144 @@ const createSessionResponse = async (
     return {
         accessToken: tokenPair.accessToken,
         refreshToken: tokenPair.refreshToken,
-        user: serializeUser(user)
+        user: serializeAuthenticatedUser(user),
+        choir: choir ? serializeChoir(choir) : null,
+        requiresPasswordChange: user.mustChangePassword
     };
+};
+
+const loadActiveChoir = async (
+    choirId: string
+): Promise<IChoir> => {
+    const choir = await Choir.findOne({ _id: choirId, isActive: true });
+
+    if (!choir) {
+        throw new AppError(
+            403,
+            'CHOIR_INACTIVE',
+            'The user choir is missing or inactive'
+        );
+    }
+
+    return choir;
+};
+
+const loadSessionChoir = async (user: IUser): Promise<IChoir | null> => {
+    if (user.role === 'SUPER_ADMIN') {
+        if (user.choirId) {
+            throw new AppError(
+                403,
+                'INVALID_PLATFORM_CONTEXT',
+                'A SUPER_ADMIN account cannot have a choir assignment'
+            );
+        }
+
+        return null;
+    }
+
+    if (!user.choirId) {
+        throw new AppError(
+            403,
+            'CHOIR_CONTEXT_REQUIRED',
+            'The user does not have a valid choir context'
+        );
+    }
+
+    return loadActiveChoir(user.choirId.toString());
+};
+
+const verifyUserPassword = async (
+    password: string,
+    user: IUser | null
+): Promise<IUser> => {
+    if (!user) {
+        throw new AppError(
+            401,
+            'INVALID_CREDENTIALS',
+            'The provided credentials are invalid'
+        );
+    }
+
+    const passwordMatches = await bcrypt.compare(password, user.password);
+
+    if (!passwordMatches) {
+        throw new AppError(
+            401,
+            'INVALID_CREDENTIALS',
+            'The provided credentials are invalid'
+        );
+    }
+
+    if (!user.isActive) {
+        throw new AppError(
+            403,
+            'USER_INACTIVE',
+            'The user account is inactive'
+        );
+    }
+
+    return user;
+};
+
+const recordSuccessfulLogin = async (user: IUser): Promise<void> => {
+    const lastAccess = new Date();
+    user.lastAccess = lastAccess;
+
+    await User.updateOne(
+        { _id: user._id },
+        { $set: { lastAccess } }
+    );
+};
+
+export const loginTenantUser = async (
+    input: TenantLoginInput
+): Promise<AuthSessionResponse> => {
+    const choir = await Choir.findOne({
+        code: normalizeChoirCode(input.choirCode),
+        isActive: true
+    });
+
+    if (!choir) {
+        throw new AppError(
+            401,
+            'INVALID_CREDENTIALS',
+            'The provided credentials are invalid'
+        );
+    }
+
+    const identifier = normalizeUserIdentifier(input.identifier);
+    const userDocument = await User.findOne({
+        choirId: choir._id,
+        role: { $ne: 'SUPER_ADMIN' },
+        $or: [
+            { emailNormalized: identifier },
+            { usernameNormalized: identifier }
+        ]
+    }).select('+password');
+
+    const user = await verifyUserPassword(input.password, userDocument);
+    await recordSuccessfulLogin(user);
+
+    return createSessionResponse(user, choir);
+};
+
+export const loginPlatformUser = async (
+    input: PlatformLoginInput
+): Promise<AuthSessionResponse> => {
+    const identifier = normalizeUserIdentifier(input.identifier);
+    const userDocument = await User.findOne({
+        role: 'SUPER_ADMIN',
+        choirId: null,
+        $or: [
+            { emailNormalized: identifier },
+            { usernameNormalized: identifier }
+        ]
+    }).select('+password');
+
+    const user = await verifyUserPassword(input.password, userDocument);
+    await recordSuccessfulLogin(user);
+
+    return createSessionResponse(user, null);
 };
 
 export const bootstrapSuperAdmin = async (
@@ -118,10 +262,7 @@ export const bootstrapSuperAdmin = async (
     const platformState = await PlatformState.findOne({ key: 'platform' });
     const existingSuperAdmin = await User.exists({ role: 'SUPER_ADMIN' });
 
-    if (
-        platformState?.superAdminBootstrapCompletedAt ||
-        existingSuperAdmin
-    ) {
+    if (platformState?.superAdminBootstrapCompletedAt || existingSuperAdmin) {
         throw new AppError(
             409,
             'BOOTSTRAP_ALREADY_COMPLETED',
@@ -129,7 +270,10 @@ export const bootstrapSuperAdmin = async (
         );
     }
 
-    const passwordHash = await bcrypt.hash(input.password, 12);
+    const passwordHash = await bcrypt.hash(
+        input.password,
+        PASSWORD_HASH_ROUNDS
+    );
 
     const superAdmin = await User.create({
         name: input.name,
@@ -159,7 +303,7 @@ export const bootstrapSuperAdmin = async (
         { upsert: true, new: true }
     );
 
-    return createSessionResponse(superAdmin);
+    return createSessionResponse(superAdmin, null);
 };
 
 export const refreshSession = async (
@@ -177,9 +321,7 @@ export const refreshSession = async (
             revokedAt: null,
             expiresAt: { $gt: new Date() }
         },
-        {
-            $set: { revokedAt: new Date() }
-        },
+        { $set: { revokedAt: new Date() } },
         { new: true }
     ).select('+tokenHash');
 
@@ -196,7 +338,6 @@ export const refreshSession = async (
     if (
         !user ||
         !user.isActive ||
-        !isUserRole(user.role) ||
         user.sessionVersion !== claims.sv
     ) {
         throw new AppError(
@@ -206,36 +347,73 @@ export const refreshSession = async (
         );
     }
 
-    if (user.role !== 'SUPER_ADMIN') {
-        if (!user.choirId) {
-            throw new AppError(
-                403,
-                'CHOIR_CONTEXT_REQUIRED',
-                'The user does not have a valid choir context'
-            );
-        }
+    const choir = await loadSessionChoir(user);
+    const newSession = await createSessionResponse(user, choir);
 
-        const activeChoir = await Choir.exists({
-            _id: user.choirId,
-            isActive: true
-        });
-
-        if (!activeChoir) {
-            throw new AppError(
-                403,
-                'CHOIR_INACTIVE',
-                'The user choir is missing or inactive'
-            );
-        }
-    }
-
-    const newSession = await createSessionResponse(user);
     storedToken.replacedByTokenHash = hashRefreshToken(
         newSession.refreshToken
     );
     await storedToken.save();
 
     return newSession;
+};
+
+export const changeAuthenticatedPassword = async (
+    userId: string,
+    input: ChangePasswordInput
+): Promise<AuthSessionResponse> => {
+    const user = await User.findById(userId).select('+password');
+
+    if (!user || !user.isActive) {
+        throw new AppError(
+            401,
+            'SESSION_REVOKED',
+            'The user session is no longer valid'
+        );
+    }
+
+    const currentPasswordMatches = await bcrypt.compare(
+        input.currentPassword,
+        user.password
+    );
+
+    if (!currentPasswordMatches) {
+        throw new AppError(
+            401,
+            'INVALID_CURRENT_PASSWORD',
+            'The current password is invalid'
+        );
+    }
+
+    const passwordIsUnchanged = await bcrypt.compare(
+        input.newPassword,
+        user.password
+    );
+
+    if (passwordIsUnchanged) {
+        throw new AppError(
+            409,
+            'PASSWORD_REUSE_NOT_ALLOWED',
+            'The new password must be different from the current password'
+        );
+    }
+
+    user.password = await bcrypt.hash(
+        input.newPassword,
+        PASSWORD_HASH_ROUNDS
+    );
+    user.mustChangePassword = false;
+    user.passwordChangedAt = new Date();
+    user.sessionVersion += 1;
+    await user.save();
+
+    await RefreshToken.updateMany(
+        { userId: user._id, revokedAt: null },
+        { $set: { revokedAt: new Date() } }
+    );
+
+    const choir = await loadSessionChoir(user);
+    return createSessionResponse(user, choir);
 };
 
 export const revokeRefreshToken = async (
@@ -248,9 +426,7 @@ export const revokeRefreshToken = async (
             userId,
             revokedAt: null
         },
-        {
-            $set: { revokedAt: new Date() }
-        }
+        { $set: { revokedAt: new Date() } }
     );
 };
 
@@ -261,11 +437,13 @@ export const buildCurrentSessionResponse = (
     readonly choir: AuthenticatedChoir | null;
     readonly targetChoir: AuthenticatedChoir | null;
     readonly effectiveChoirId: string | null;
+    readonly requiresPasswordChange: boolean;
 } => {
     return {
         user: context.user,
         choir: context.choir,
         targetChoir: context.targetChoir,
-        effectiveChoirId: context.effectiveChoirId
+        effectiveChoirId: context.effectiveChoirId,
+        requiresPasswordChange: context.user.mustChangePassword
     };
 };

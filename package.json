@@ -9,7 +9,9 @@
     "typecheck": "tsc --noEmit",
     "db:backup": "ts-node src/scripts/backupDatabase.ts",
     "db:reset-seed": "ts-node src/scripts/resetAndSeed.ts",
-    "verify:phase-0-2": "npm run typecheck && npm run build"
+    "verify:phase-0-2": "npm run typecheck && npm run build",
+    "db:sync-indexes": "ts-node src/scripts/syncIndexes.ts",
+    "verify:phase-3-4": "npm run typecheck && npm run build"
   },
   "keywords": [],
   "author": "",

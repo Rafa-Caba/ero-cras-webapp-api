@@ -5,6 +5,9 @@ import { AppError } from '../errors/AppError';
 import {
     bootstrapSuperAdmin,
     buildCurrentSessionResponse,
+    changeAuthenticatedPassword,
+    loginPlatformUser,
+    loginTenantUser,
     refreshSession,
     revokeRefreshToken
 } from '../services/auth.service';
@@ -14,7 +17,10 @@ import {
     AuthRequestBody,
     parseBootstrapSuperAdminBody,
     parseBootstrapTokenHeader,
-    parseRefreshSessionBody
+    parseChangePasswordBody,
+    parsePlatformLoginBody,
+    parseRefreshSessionBody,
+    parseTenantLoginBody
 } from '../validations/schemas/auth.schemas';
 
 interface AuthBodyRequest extends RequestWithUser {
@@ -34,12 +40,50 @@ export const bootstrapSuperAdminController = async (
     res.status(201).json(session);
 };
 
+export const loginTenantController = async (
+    req: Request<Record<string, never>, object, AuthRequestBody | undefined>,
+    res: Response
+): Promise<void> => {
+    const input = parseTenantLoginBody(req.body);
+    const session = await loginTenantUser(input);
+
+    res.json(session);
+};
+
+export const loginPlatformController = async (
+    req: Request<Record<string, never>, object, AuthRequestBody | undefined>,
+    res: Response
+): Promise<void> => {
+    const input = parsePlatformLoginBody(req.body);
+    const session = await loginPlatformUser(input);
+
+    res.json(session);
+};
+
 export const refreshSessionController = async (
     req: Request<Record<string, never>, object, AuthRequestBody | undefined>,
     res: Response
 ): Promise<void> => {
     const input = parseRefreshSessionBody(req.body);
     const session = await refreshSession(input.refreshToken);
+
+    res.json(session);
+};
+
+export const changePasswordController = async (
+    req: AuthBodyRequest,
+    res: Response
+): Promise<void> => {
+    if (!req.user) {
+        throw new AppError(
+            500,
+            'AUTH_PIPELINE_ERROR',
+            'The authenticated user has not been loaded'
+        );
+    }
+
+    const input = parseChangePasswordBody(req.body);
+    const session = await changeAuthenticatedPassword(req.user.id, input);
 
     res.json(session);
 };
