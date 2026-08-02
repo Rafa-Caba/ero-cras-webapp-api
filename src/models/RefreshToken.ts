@@ -1,14 +1,28 @@
-import { Schema, model, Document, Types } from 'mongoose';
+// src/models/RefreshToken.ts
 
-export interface IRefreshToken extends Document {
-    token: string;
+import { Document, Schema, Types, model } from 'mongoose';
+
+export interface IRefreshToken extends Document<Types.ObjectId> {
+    tokenHash: string;
+    tokenId: string;
     userId: Types.ObjectId;
+    sessionVersion: number;
+    expiresAt: Date;
+    revokedAt?: Date | null;
+    replacedByTokenHash?: string | null;
     createdAt: Date;
+    updatedAt: Date;
 }
 
 const RefreshTokenSchema = new Schema<IRefreshToken>(
     {
-        token: {
+        tokenHash: {
+            type: String,
+            required: true,
+            unique: true,
+            select: false
+        },
+        tokenId: {
             type: String,
             required: true,
             unique: true
@@ -16,30 +30,35 @@ const RefreshTokenSchema = new Schema<IRefreshToken>(
         userId: {
             type: Schema.Types.ObjectId,
             ref: 'User',
+            required: true,
+            index: true
+        },
+        sessionVersion: {
+            type: Number,
+            required: true,
+            min: 1
+        },
+        expiresAt: {
+            type: Date,
             required: true
         },
-        createdAt: {
+        revokedAt: {
             type: Date,
-            default: Date.now,
-            expires: '7d'
+            default: null
+        },
+        replacedByTokenHash: {
+            type: String,
+            default: null
         }
     },
     {
-        timestamps: false
+        timestamps: true,
+        versionKey: false
     }
 );
 
-RefreshTokenSchema.set('toJSON', {
-    virtuals: true,
-    versionKey: false,
-    transform: function (_doc, ret: any) {
-        if (ret._id) {
-            ret.id = ret._id.toString();
-            delete ret._id;
-        }
-        return ret;
-    }
-});
+RefreshTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+RefreshTokenSchema.index({ userId: 1, revokedAt: 1 });
 
 const RefreshToken = model<IRefreshToken>('RefreshToken', RefreshTokenSchema);
 export default RefreshToken;

@@ -1,135 +1,55 @@
-## Ero Cras - Choral Administration Web Platform
+<!-- README.md -->
 
-**Ero Cras** is a web application designed to manage liturgical songs, image galleries, choir members, announcements, and user roles with access control (Admin, Editor, Viewer). The system includes a **public version accessible without login** and a **secure admin section** protected with JWT authentication.
+# Ero Cras API
 
----
+API compartida por la aplicación React Native privada y la Web App pública de Ero Cras / Choir App.
 
-## 🚀 Technologies Used
+## Estado actual
 
-### Backend (REST API)
-- **Node.js**
-- **Express.js**
-- **MongoDB** (with mongoose)
-- **JWT Authentication** (Access and Refresh Tokens)
-- **Zustand** (frontend state management)
+Esta entrega implementa la base de las Fases 0, 1 y 2 del roadmap multi-coro:
 
-### Frontend
-- **React.js + TypeScript**
-- **Zustand** (global state)
-- **React Bootstrap** (UI components)
-- **Axios** (with interceptors and refresh tokens)
-- **Vite** (bundler)
+- configuración estricta por ambiente;
+- respaldo, limpieza y seed controlado de MongoDB;
+- autenticación fail-closed;
+- usuario y coro recargados desde MongoDB en cada request protegida;
+- tokens con claims mínimos y `sessionVersion`;
+- refresh tokens almacenados mediante hash y rotación de un solo uso;
+- contexto tenant explícito para operaciones de coro;
+- bootstrap único y protegido del primer `SUPER_ADMIN`;
+- eliminación del registro público y del flujo heredado “primer usuario = SUPER_ADMIN”;
+- separación del CRUD de coros en route, controller, service y schema, con desactivación lógica.
 
-### Deployment
-- **Render** (Backend)
-- **Vercel** (Frontend)
+La implementación detallada, comandos y contratos están en [`README_PHASE_0_2.md`](./README_PHASE_0_2.md).
 
----
+## Requisitos
 
-## 🎓 Features
+- Node.js compatible con el proyecto.
+- MongoDB local o MongoDB Atlas.
+- Variables configuradas desde uno de los archivos `.env.*.example`.
 
-### 🏠 Public Site (`/`)
-- Welcome page with thematic images.
-- Inspirational news/messages.
-- Public view of songs.
-- Public gallery view.
+## Instalación
 
-### 🔒 Admin Panel (`/admin`)
-- Access protected by secure JWT login.
-- Central dashboard with shortcuts to:
-  - Users
-  - Songs
-  - Gallery
-  - Members
-  - Announcements
-  - Group Chat (planned)
-- UI adapts based on user role:
-  - `admin`: full access
-  - `editor`: can create and edit content
-  - `viewer`: read-only access
-
-### 🎷 Songs
-- Create, edit, and delete songs.
-- Categorize by song type.
-
-### 🌍 Gallery
-- Upload, edit, and delete images.
-- Assign images to specific site positions:
-  - Homepage Image
-  - Left Menu Image
-  - Right Menu Image (top / bottom)
-
-### 👥 Members
-- Manage choir member profiles.
-- Profile picture and personal info.
-
-### 📊 Announcements
-- Post news or inspirational messages.
-
-### 👤 Users (Admin Panel)
-- Manage user accounts and roles.
-- Defined roles: `admin`, `editor`, `viewer`.
-- Secure JWT auth with persistent refresh tokens.
-
-### 🎨 Theme Customization
-- Site theme managed via `useThemeStore`:
-  - Primary: `#CFAEF9`
-  - Secondary: `#EAD4FF`
-  - Nav BG: `#F3E3FB`
-  - Footer BG: `#b68fe6`
-  - Buttons: `#A966FF`
-
----
-
-## ⚙️ Common Scripts
-
-### API
 ```bash
 npm install
-npm start # or npm run dev with nodemon
 ```
 
-### Frontend
+## Desarrollo
+
 ```bash
-npm install
-npm run dev
+NODE_ENV=development npm run dev
 ```
 
----
+## Verificación
 
-## 🏡 Environment Variables
-
-### Backend (`.env` for Render)
-```
-PORT=10000
-MONGODB_URI=mongodb+srv://...
-JWT_SECRET=...
-REFRESH_SECRET=...
+```bash
+npm run verify:phase-0-2
 ```
 
-### Frontend (`.env` for Vercel)
+## Scripts de base de datos
+
+```bash
+NODE_ENV=development npm run db:backup
+NODE_ENV=development npm run db:reset-seed
 ```
-VITE_API_URL=https://your-backend-on-render.onrender.com
-```
 
----
-
-## ⛔️ Access Control
-- Protected routes require authentication.
-- Unauthorized users are redirected.
-- Role-based UI using `AuthContext` and `PrivateRoute` in React.
-
----
-
-## 🚀 Upcoming Features
-- Visual theme selector with persistent storage.
-- Image preview per site placement.
-- Internal group chat and messaging.
-- Accessibility improvements and responsive design.
-
----
-
-## 🌟 Author
-**Rafael Cabanillas**
-
-> A project created with passion to support the faith and tech community ✨
+El reset está bloqueado en `production` y exige dos variables de confirmación. Consulta el README de la fase antes de ejecutarlo.

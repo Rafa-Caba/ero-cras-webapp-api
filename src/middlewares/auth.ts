@@ -1,41 +1,38 @@
-import { Request, Response, NextFunction } from 'express';
-import jwt, { JwtPayload } from 'jsonwebtoken';
+// src/middlewares/auth.ts
 
-const JWT_SECRET = process.env.JWT_SECRET || 'secretoSuperUltraSeguro';
+import { authenticate } from './authenticate';
+import { loadAuthenticatedUser } from './loadAuthenticatedUser';
+import { requireActiveUser } from './requireActiveUser';
+import { requireActiveChoir } from './requireActiveChoir';
+import {
+    requireRouteTenantContext,
+    resolveRouteTargetChoir,
+    resolveTargetChoir
+} from './resolveTargetChoir';
+import { requireTenantContext } from './requireTenantContext';
 
-export interface UserPayload extends JwtPayload {
-    id: string;
-    username: string;
-    role: string;
-    name?: string;
-    choirId?: string;
-    choirName?: string;
-}
+export type {
+    AuthenticatedRequest,
+    RequestWithUser
+} from '../types/auth.types';
 
-export interface RequestWithUser extends Request {
-    user?: UserPayload;
-}
+export const verifyPlatformToken = [
+    authenticate,
+    loadAuthenticatedUser,
+    requireActiveUser,
+    requireActiveChoir
+];
 
-export type AuthenticatedRequest = RequestWithUser;
+export const verifyTenantToken = [
+    ...verifyPlatformToken,
+    resolveTargetChoir,
+    requireTenantContext
+];
 
-const verifyToken = (req: RequestWithUser, res: Response, next: NextFunction): void => {
-    const authHeader = req.headers.authorization;
-    const token = authHeader && authHeader.split(' ')[1];
-
-    if (!token) {
-        res.status(403).json({ message: 'Token not provided' });
-        return;
-    }
-
-    try {
-        const decoded = jwt.verify(token, JWT_SECRET) as UserPayload;
-
-        req.user = decoded;
-
-        next();
-    } catch (err) {
-        res.status(401).json({ message: 'Invalid Token' });
-    }
-};
+const verifyToken = [
+    ...verifyPlatformToken,
+    resolveRouteTargetChoir,
+    requireRouteTenantContext
+];
 
 export default verifyToken;

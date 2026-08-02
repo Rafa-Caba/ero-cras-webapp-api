@@ -1,11 +1,13 @@
-import dotenv from 'dotenv';
-dotenv.config();
+// src/server.ts
 
-import express, { Application, NextFunction, Request, Response } from 'express';
-import mongoose from 'mongoose';
+import express, { Application } from 'express';
 import cors from 'cors';
 import http from 'http';
 import { Server as SocketIOServer } from 'socket.io';
+import { connectDatabase } from './config/database';
+import { env } from './config/env';
+import { isOriginAllowed } from './config/cors';
+import { errorHandler, notFoundHandler } from './middlewares/httpErrors';
 import { configuringSockets } from './socket';
 
 import authRoutes from './routes/auth';
@@ -23,44 +25,16 @@ import themeRoutes from './routes/theme';
 import chatRoutes from './routes/chat';
 import instrumentsRouter from './routes/instruments';
 
-import { ensureSettingsExists } from './utils/initSettings';
-import { createDefaultThemes } from './utils/initialThemes';
-import { ensureDefaultChoir } from './bootstrap/createDefaultChoir';
-
 export const app: Application = express();
-
-const PORT = process.env.PORT || 10000;
-const MONGO_URI = process.env.MONGO_URI || '';
-
-if (!MONGO_URI) {
-    console.error('Missing MONGO_URI in .env file');
-    process.exit(1);
-}
-
-const whitelist = [
-    'http://localhost:5173', // Web Dev
-    'http://localhost:8081', // Mobile Dev
-    'http://10.0.2.2:10000',
-    'https://coro-webapp.vercel.app', // Web Prod
-    'https://ero-cras-webapp-api-production.up.railway.app' // Self / API
-];
-
-const isOriginAllowed = (origin?: string | null): boolean => {
-    if (!origin) return true;
-
-    return whitelist.some((base) => {
-        return origin === base || origin.startsWith(base);
-    });
-};
 
 app.use(cors({
     origin: (origin, callback) => {
         if (isOriginAllowed(origin)) {
             callback(null, true);
-        } else {
-            console.log('Blocked by CORS (HTTP):', origin);
-            callback(new Error('Not allowed by CORS'));
+            return;
         }
+
+        callback(new Error('Not allowed by CORS'));
     },
     credentials: true
 }));
@@ -83,49 +57,37 @@ app.use('/api/themes', themeRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/instruments', instrumentsRouter);
 
-app.use((req: Request, res: Response) => {
-    res.status(404).json({
-        message: 'Route not found',
-        method: req.method,
-        path: req.originalUrl
+app.use(notFoundHandler);
+app.use(errorHandler);
+
+const startServer = async (): Promise<void> => {
+    await connectDatabase();
+
+    const httpServer = http.createServer(app);
+    const io = new SocketIOServer(httpServer, {
+        cors: {
+            origin: (origin, callback) => {
+                if (isOriginAllowed(origin)) {
+                    callback(null, true);
+                    return;
+                }
+
+                callback(new Error('Not allowed by CORS'));
+            },
+            methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+            credentials: true
+        }
     });
-});
 
-app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    console.error(err.stack);
-    res.status(500).json({ message: 'Internal Server Error' });
-});
+    app.set('io', io);
+    configuringSockets(io);
 
-mongoose.connect(MONGO_URI)
-    .then(async () => {
-        const defaultChoirId = await ensureDefaultChoir();
-        await ensureSettingsExists();
-        await createDefaultThemes(defaultChoirId);
-
-        const httpServer = http.createServer(app);
-
-        const io = new SocketIOServer(httpServer, {
-            cors: {
-                origin: (origin, callback) => {
-                    if (isOriginAllowed(origin)) {
-                        callback(null, true);
-                    } else {
-                        console.log('Blocked by CORS (Socket.IO):', origin);
-                        callback(new Error('Not allowed by CORS'));
-                    }
-                },
-                methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-                credentials: true
-            }
-        });
-
-        app.set('io', io);
-        configuringSockets(io);
-
-        httpServer.listen(PORT, () => {
-            // console.log(`🚀 Server running on port ${PORT}`);
-        });
-    })
-    .catch(err => {
-        console.error('MongoDB Connection Error:', err);
+    httpServer.listen(env.port, () => {
+        console.log(`API listening on port ${env.port}`);
     });
+};
+
+startServer().catch((error: Error) => {
+    console.error('API startup failed:', error.message);
+    process.exitCode = 1;
+});

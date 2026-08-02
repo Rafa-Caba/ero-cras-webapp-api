@@ -1,12 +1,14 @@
-import { Schema, model, Document, Types } from 'mongoose';
+// src/models/Choir.ts
 
-export interface IChoir extends Document {
+import { Document, Schema, Types, model } from 'mongoose';
+
+export interface IChoir extends Document<Types.ObjectId> {
     name: string;
     code: string;
     description?: string;
 
     logoUrl?: string;
-    logoPublicId?: string;
+    logoPublicId?: string | null;
 
     isActive: boolean;
 
@@ -20,7 +22,13 @@ export interface IChoir extends Document {
 const ChoirSchema = new Schema<IChoir>(
     {
         name: { type: String, required: true, trim: true },
-        code: { type: String, required: true, trim: true, lowercase: true, unique: true },
+        code: {
+            type: String,
+            required: true,
+            trim: true,
+            lowercase: true,
+            unique: true
+        },
 
         description: { type: String, default: '' },
 
@@ -32,18 +40,16 @@ const ChoirSchema = new Schema<IChoir>(
         createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
         updatedBy: { type: Schema.Types.ObjectId, ref: 'User' }
     },
-    { timestamps: true }
+    {
+        timestamps: true,
+        versionKey: false,
+        toJSON: { virtuals: true },
+        toObject: { virtuals: true }
+    }
 );
 
-ChoirSchema.set('toJSON', {
-    virtuals: true,
-    versionKey: false,
-    transform: (_doc, ret: any) => {
-        ret.id = ret._id.toString();
-        delete ret._id;
-
-        return ret;
-    }
+ChoirSchema.pre('validate', function normalizeChoirCode(this: IChoir): void {
+    this.code = this.code.trim().toLowerCase();
 });
 
 const Choir = model<IChoir>('Choir', ChoirSchema);

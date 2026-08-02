@@ -1,14 +1,21 @@
+// src/utils/logger.ts
+
 import Log from '../models/Log';
 import type { RequestWithUser } from '../middlewares/auth';
 
-type RegisterLogPayload = {
-    req: RequestWithUser;
-    collection: string;
-    action: 'create' | 'update' | 'delete' | 'add_reaction' | 'remove_reaction';
-    referenceId: string;
-    changes?: Record<string, any>;
-    choirId?: string;
-};
+interface RegisterLogPayload {
+    readonly req: RequestWithUser;
+    readonly collection: string;
+    readonly action:
+        | 'create'
+        | 'update'
+        | 'delete'
+        | 'add_reaction'
+        | 'remove_reaction';
+    readonly referenceId: string;
+    readonly changes?: object;
+    readonly choirId?: string;
+}
 
 export const registerLog = async ({
     req,
@@ -17,13 +24,18 @@ export const registerLog = async ({
     referenceId,
     changes = {},
     choirId
-}: RegisterLogPayload) => {
+}: RegisterLogPayload): Promise<void> => {
     try {
-        const currentUser = (req.user || (req as any).usuario) as any;
+        const currentUser = req.user;
 
-        if (!currentUser) return;
+        if (!currentUser) {
+            return;
+        }
 
-        const effectiveChoirId = choirId ?? currentUser.choirId;
+        const effectiveChoirId =
+            choirId ??
+            req.auth?.effectiveChoirId ??
+            currentUser.choirId;
 
         if (!effectiveChoirId) {
             console.warn(
@@ -40,7 +52,7 @@ export const registerLog = async ({
             referenceId,
             changes
         });
-    } catch (error) {
-        console.error('Error registering log:', error);
+    } catch {
+        console.error('Error registering log');
     }
 };
