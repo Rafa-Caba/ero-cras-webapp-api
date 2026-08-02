@@ -11,7 +11,8 @@
     "db:reset-seed": "ts-node src/scripts/resetAndSeed.ts",
     "verify:phase-0-2": "npm run typecheck && npm run build",
     "db:sync-indexes": "ts-node src/scripts/syncIndexes.ts",
-    "verify:phase-3-4": "npm run typecheck && npm run build"
+    "verify:phase-3-4": "npm run typecheck && npm run build",
+    "verify:phase-5-6": "npm run typecheck && npm run build"
   },
   "keywords": [],
   "author": "",
