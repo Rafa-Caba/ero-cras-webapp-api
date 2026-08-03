@@ -122,8 +122,10 @@ export const createChoirController = async (
         req,
         collection: 'Choirs',
         action: 'create',
+        operation: 'choir.create',
         referenceId: choir._id.toString(),
         choirId: choir._id.toString(),
+        after: choir.toJSON(),
         changes: { new: choir.toJSON() }
     });
 
@@ -140,6 +142,8 @@ export const updateChoirController = async (
     const choirId = parseChoirIdParam(req.params.id);
     const existingChoir = await getVisibleChoirById(currentUser, choirId);
     const choirObjectId = existingChoir._id;
+    const wasActive = existingChoir.isActive;
+    const before = existingChoir.toJSON();
     const actorUserId = new Types.ObjectId(currentUser.id);
     const previousAssetId = existingChoir.logoAssetId;
     const uploaded = req.file
@@ -194,8 +198,13 @@ export const updateChoirController = async (
         req,
         collection: 'Choirs',
         action: 'update',
+        operation: wasActive !== choir.isActive
+            ? (choir.isActive ? 'choir.activate' : 'choir.deactivate')
+            : 'choir.update',
         referenceId: choir._id.toString(),
         choirId: choir._id.toString(),
+        before,
+        after: choir.toJSON(),
         changes: { updated: choir.toJSON() }
     });
 
@@ -208,14 +217,19 @@ export const deactivateChoirController = async (
 ): Promise<void> => {
     const currentUser = requireAuthenticatedUser(req);
     const choirId = parseChoirIdParam(req.params.id);
+    const existingChoir = await getVisibleChoirById(currentUser, choirId);
+    const before = existingChoir.toJSON();
     const choir = await deactivateChoir(choirId, currentUser.id);
 
     await registerLog({
         req,
         collection: 'Choirs',
         action: 'delete',
+        operation: 'choir.deactivate',
         referenceId: choir._id.toString(),
         choirId: choir._id.toString(),
+        before,
+        after: choir.toJSON(),
         changes: { deactivated: choir.toJSON() }
     });
 

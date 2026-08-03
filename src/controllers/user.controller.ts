@@ -258,6 +258,17 @@ export const listUsersController = async (
         User.countDocuments(filter)
     ]);
 
+    if (req.user?.role === 'SUPER_ADMIN') {
+        await registerLog({
+            req,
+            collection: 'AdministrativeAccess',
+            action: 'update',
+            operation: 'admin.users_access',
+            referenceId: choirId.toString(),
+            description: 'SUPER_ADMIN accessed the tenant user administration list'
+        });
+    }
+
     res.json({
         users: users.map(serializeUser),
         currentPage: pagination.page,
@@ -325,7 +336,10 @@ export const createUserController = async (
         req,
         collection: 'Users',
         action: 'create',
+        operation: 'user.create',
         referenceId: result.user.id,
+        targetUserId: result.user.id,
+        after: serializeUser(result.user),
         changes: { after: serializeUser(result.user) }
     });
 
@@ -392,7 +406,11 @@ export const updateUserController = async (
         req,
         collection: 'Users',
         action: 'update',
+        operation: before.role !== result.user.role ? 'user.role_change' : 'user.update',
         referenceId: user.id,
+        targetUserId: user.id,
+        before,
+        after: serializeUser(result.user),
         changes: {
             before,
             after: serializeUser(result.user),
@@ -426,7 +444,11 @@ export const setUserActiveStatusController = async (
         req,
         collection: 'Users',
         action: 'update',
+        operation: updatedUser.isActive ? 'user.activate' : 'user.suspend',
         referenceId: user.id,
+        targetUserId: user.id,
+        before,
+        after: serializeUser(updatedUser),
         changes: { before, after: serializeUser(updatedUser) }
     });
 
@@ -452,7 +474,9 @@ export const resetUserPasswordController = async (
         req,
         collection: 'Users',
         action: 'update',
+        operation: 'user.password_reset',
         referenceId: user.id,
+        targetUserId: user.id,
         changes: {
             passwordReset: true,
             mustChangePassword: true,
@@ -501,7 +525,10 @@ export const deleteUserController = async (
         req,
         collection: 'Users',
         action: 'delete',
+        operation: 'user.delete',
         referenceId: user.id,
+        targetUserId: user.id,
+        before,
         changes: { before, sessionsRevoked: true }
     });
 

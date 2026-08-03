@@ -37,6 +37,8 @@ import { startPushReceiptProcessor } from './services/expoPush.service';
 
 export const app: Application = express();
 
+app.set('trust proxy', 1);
+
 app.use(cors({
     origin: (origin, callback) => {
         if (isOriginAllowed(origin)) {
