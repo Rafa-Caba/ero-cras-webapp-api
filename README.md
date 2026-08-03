@@ -1,8 +1,8 @@
 <!-- README.md -->
 
-# Ero Cras API
+# Choirs API
 
-API compartida por la aplicación React Native privada y la Web App pública de Ero Cras / Choir App.
+API compartida por la aplicación React Native privada y la Web App pública de Choirs / Choir App.
 
 ## Estado actual
 

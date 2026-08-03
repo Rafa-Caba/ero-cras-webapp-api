@@ -1,6 +1,6 @@
 # 🧩 Chat Module (Admin Group Chat)
 
-This module implements a **real-time group chat** system within the Ero Cras Admin Panel. It allows administrators, editors, and viewers to communicate live using a rich text editor, with support for embedded images, scroll behavior, and activity logging.
+This module implements a **real-time group chat** system within the Choirs Admin Panel. It allows administrators, editors, and viewers to communicate live using a rich text editor, with support for embedded images, scroll behavior, and activity logging.
 
 ---
 
