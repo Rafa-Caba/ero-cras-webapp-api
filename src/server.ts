@@ -31,6 +31,9 @@ import themeRoutes from './routes/theme';
 import chatRoutes from './routes/chat';
 import instrumentsRouter from './routes/instruments';
 import publicRoutes from './routes/public';
+import mediaRoutes from './routes/media';
+import pushDeviceRoutes from './routes/pushDevice';
+import { startPushReceiptProcessor } from './services/expoPush.service';
 
 export const app: Application = express();
 
@@ -64,6 +67,8 @@ app.use('/api/logs', logRoutes);
 app.use('/api/themes', themeRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/instruments', instrumentsRouter);
+app.use('/api/media', mediaRoutes);
+app.use('/api/push-devices', pushDeviceRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
@@ -94,6 +99,7 @@ const startServer = async (): Promise<void> => {
 
     app.set('io', io);
     configuringSockets(io);
+    startPushReceiptProcessor();
 
     httpServer.listen(env.port, () => {
         console.log(`API listening on port ${env.port}`);

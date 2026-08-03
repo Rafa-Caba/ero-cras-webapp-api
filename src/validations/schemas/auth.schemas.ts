@@ -14,6 +14,7 @@ export interface AuthRequestBody {
     readonly refreshToken?: RequestBodyValue;
     readonly currentPassword?: RequestBodyValue;
     readonly newPassword?: RequestBodyValue;
+    readonly deviceId?: RequestBodyValue;
 }
 
 export interface BootstrapSuperAdminInput {
@@ -41,6 +42,10 @@ export interface ChangePasswordInput {
 
 export interface RefreshSessionInput {
     readonly refreshToken: string;
+}
+
+export interface LogoutInput extends RefreshSessionInput {
+    readonly deviceId?: string;
 }
 
 const requireBody = (
@@ -217,6 +222,25 @@ export const parseChangePasswordBody = (
         newPassword: validatePasswordStrength(
             requireText(requestBody.newPassword, 'newPassword', 12, 128)
         )
+    };
+};
+
+export const parseLogoutBody = (
+    body: AuthRequestBody | undefined
+): LogoutInput => {
+    const requestBody = requireBody(body);
+    const deviceId = requestBody.deviceId === undefined
+        ? undefined
+        : requireText(requestBody.deviceId, 'deviceId', 1, 200);
+
+    return {
+        refreshToken: requireText(
+            requestBody.refreshToken,
+            'refreshToken',
+            20,
+            4096
+        ),
+        deviceId
     };
 };
 

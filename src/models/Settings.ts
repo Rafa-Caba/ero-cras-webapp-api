@@ -2,6 +2,7 @@
 
 import { Document, Schema, Types, model } from 'mongoose';
 import type { StoredJsonValue } from '../types/content.types';
+import type { MediaResourceType } from '../types/media.types';
 
 export interface SettingsSocials {
     facebook: string;
@@ -21,6 +22,8 @@ export interface ISettings extends Document<Types.ObjectId> {
     contactPhone: string;
     logoUrl?: string;
     logoPublicId?: string | null;
+    logoResourceType?: MediaResourceType | null;
+    logoAssetId?: Types.ObjectId | null;
     socials: SettingsSocials;
     homeLegends: SettingsHomeLegends;
     history: StoredJsonValue;
@@ -37,6 +40,8 @@ const SettingsSchema = new Schema<ISettings>(
         contactPhone: { type: String, default: '' },
         logoUrl: { type: String, default: '' },
         logoPublicId: { type: String, default: null },
+        logoResourceType: { type: String, enum: ['image', 'video', 'raw'], default: null },
+        logoAssetId: { type: Schema.Types.ObjectId, ref: 'MediaAsset', default: null },
         socials: {
             facebook: { type: String, default: '' },
             instagram: { type: String, default: '' },

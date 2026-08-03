@@ -2,6 +2,7 @@
 
 import { Document, Schema, Types, model } from 'mongoose';
 import { assertSameChoirRelation } from '../services/tenantRelation.service';
+import type { MediaResourceType } from '../types/media.types';
 import Instrument from './Instrument';
 
 export interface IMember extends Document<Types.ObjectId> {
@@ -11,6 +12,8 @@ export interface IMember extends Document<Types.ObjectId> {
     voice: boolean;
     imageUrl?: string;
     imagePublicId?: string | null;
+    imageResourceType?: MediaResourceType | null;
+    imageAssetId?: Types.ObjectId | null;
     choirId: Types.ObjectId;
     createdBy?: Types.ObjectId;
     updatedBy?: Types.ObjectId;
@@ -30,6 +33,8 @@ const MemberSchema = new Schema<IMember>(
         voice: { type: Boolean, default: false, required: true },
         imageUrl: { type: String, default: '' },
         imagePublicId: { type: String, default: null },
+        imageResourceType: { type: String, enum: ['image', 'video', 'raw'], default: null },
+        imageAssetId: { type: Schema.Types.ObjectId, ref: 'MediaAsset', default: null },
         choirId: {
             type: Schema.Types.ObjectId,
             ref: 'Choir',

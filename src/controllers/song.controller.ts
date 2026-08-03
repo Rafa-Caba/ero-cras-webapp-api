@@ -1,7 +1,14 @@
 // src/controllers/song.controller.ts
 
 import type { Response } from 'express';
+import { Types } from 'mongoose';
 import Song, { type ISong } from '../models/Song';
+import {
+    attachMediaAsset,
+    deleteOwnedMedia,
+    discardPendingMedia,
+    uploadTenantMedia
+} from '../services/media.service';
 import {
     buildTenantResourceFilter,
     createTenantResourceNotFoundError,
@@ -23,12 +30,10 @@ const findSong = async (
 ): Promise<ISong> => {
     return Song
         .findOne(buildTenantResourceFilter(id, choirId))
-        .orFail(() =>
-            createTenantResourceNotFoundError(
-                'SONG_NOT_FOUND',
-                'Song not found'
-            )
-        )
+        .orFail(() => createTenantResourceNotFoundError(
+            'SONG_NOT_FOUND',
+            'Song not found'
+        ))
         .exec();
 };
 
@@ -71,15 +76,45 @@ export const createSongController = async (
     res: Response
 ): Promise<void> => {
     const input = parseSongInput(req);
+    const choirId = requireEffectiveChoirObjectId(req);
+    const actorUserId = requireAuthenticatedUserId(req);
+    const songId = new Types.ObjectId();
+    const uploaded = req.file
+        ? await uploadTenantMedia({
+            file: req.file,
+            choirId,
+            actorUserId,
+            ownerType: 'SONG',
+            category: 'songs'
+        })
+        : null;
+
     const song = await Song.create({
+        _id: songId,
         ...input,
         songTypeId: input.songTypeId
             ? parseObjectId(input.songTypeId, 'songTypeId')
             : null,
-        audioUrl: req.file?.path ?? '',
-        choirId: requireEffectiveChoirObjectId(req),
-        createdBy: requireAuthenticatedUserId(req)
+        audioUrl: uploaded?.media.url ?? '',
+        audioPublicId: uploaded?.media.publicId ?? null,
+        audioResourceType: uploaded?.media.resourceType ?? null,
+        audioAssetId: uploaded?.asset._id ?? null,
+        choirId,
+        createdBy: actorUserId
+    }).catch(async (error: Error) => {
+        if (uploaded) {
+            await discardPendingMedia(
+                uploaded.asset._id,
+                choirId,
+                'Song creation failed'
+            );
+        }
+        throw error;
     });
+
+    if (uploaded) {
+        await attachMediaAsset(uploaded.asset._id, choirId, 'SONG', song._id);
+    }
 
     await registerLog({
         req,
@@ -96,12 +131,21 @@ export const updateSongController = async (
     req: RequestWithUser & { params: SongParams },
     res: Response
 ): Promise<void> => {
-    const song = await findSong(
-        req.params.id,
-        requireEffectiveChoirObjectId(req)
-    );
+    const choirId = requireEffectiveChoirObjectId(req);
+    const actorUserId = requireAuthenticatedUserId(req);
+    const song = await findSong(req.params.id, choirId);
     const before = song.toObject();
     const input = parseSongInput(req);
+    const previousAssetId = song.audioAssetId;
+    const uploaded = req.file
+        ? await uploadTenantMedia({
+            file: req.file,
+            choirId,
+            actorUserId,
+            ownerType: 'SONG',
+            category: 'songs'
+        })
+        : null;
 
     song.title = input.title;
     song.composer = input.composer;
@@ -109,13 +153,35 @@ export const updateSongController = async (
     song.songTypeId = input.songTypeId
         ? parseObjectId(input.songTypeId, 'songTypeId')
         : null;
+    song.updatedBy = actorUserId;
 
-    if (req.file) {
-        song.audioUrl = req.file.path;
+    if (uploaded) {
+        song.audioUrl = uploaded.media.url;
+        song.audioPublicId = uploaded.media.publicId;
+        song.audioResourceType = uploaded.media.resourceType;
+        song.audioAssetId = uploaded.asset._id;
     }
 
-    song.updatedBy = requireAuthenticatedUserId(req);
-    await song.save();
+    await song.save().catch(async (error: Error) => {
+        if (uploaded) {
+            await discardPendingMedia(
+                uploaded.asset._id,
+                choirId,
+                'Song update failed'
+            );
+        }
+        throw error;
+    });
+
+    if (uploaded) {
+        await attachMediaAsset(uploaded.asset._id, choirId, 'SONG', song._id);
+        await deleteOwnedMedia({
+            assetId: previousAssetId,
+            choirId,
+            ownerType: 'SONG',
+            ownerId: song._id
+        });
+    }
 
     await registerLog({
         req,
@@ -132,12 +198,17 @@ export const deleteSongController = async (
     req: RequestWithUser & { params: SongParams },
     res: Response
 ): Promise<void> => {
-    const song = await findSong(
-        req.params.id,
-        requireEffectiveChoirObjectId(req)
-    );
+    const choirId = requireEffectiveChoirObjectId(req);
+    const song = await findSong(req.params.id, choirId);
     const before = song.toObject();
+    const assetId = song.audioAssetId;
     await song.deleteOne();
+    await deleteOwnedMedia({
+        assetId,
+        choirId,
+        ownerType: 'SONG',
+        ownerId: song._id
+    });
 
     await registerLog({
         req,

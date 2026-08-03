@@ -1,11 +1,14 @@
 // src/controllers/announcement.controller.ts
 
 import type { Response } from 'express';
-import { deleteFromCloudinary } from '../middlewares/cloudinaryStorage';
+import { Types } from 'mongoose';
 import Announcement, { type IAnnouncement } from '../models/Announcement';
-import type { RequestWithUser } from '../types/auth.types';
-import { registerLog } from '../utils/logger';
-import { notifyCommunity } from '../utils/notificationHelper';
+import {
+    attachMediaAsset,
+    deleteOwnedMedia,
+    discardPendingMedia,
+    uploadTenantMedia
+} from '../services/media.service';
 import {
     buildTenantResourceFilter,
     createTenantResourceNotFoundError,
@@ -13,8 +16,11 @@ import {
     requireEffectiveChoirId,
     requireEffectiveChoirObjectId
 } from '../services/tenantScope.service';
-import { parseAnnouncementInput } from '../validations/schemas/resource.schemas';
+import type { RequestWithUser } from '../types/auth.types';
+import { registerLog } from '../utils/logger';
+import { notifyCommunity } from '../utils/notificationHelper';
 import { parseObjectId } from '../validations/schemas/common.schemas';
+import { parseAnnouncementInput } from '../validations/schemas/resource.schemas';
 
 interface ResourceParams {
     readonly id: string;
@@ -26,12 +32,10 @@ const findAnnouncement = async (
 ): Promise<IAnnouncement> => {
     return Announcement
         .findOne(buildTenantResourceFilter(id, choirId))
-        .orFail(() =>
-            createTenantResourceNotFoundError(
-                'ANNOUNCEMENT_NOT_FOUND',
-                'Announcement not found'
-            )
-        )
+        .orFail(() => createTenantResourceNotFoundError(
+            'ANNOUNCEMENT_NOT_FOUND',
+            'Announcement not found'
+        ))
         .exec();
 };
 
@@ -52,11 +56,10 @@ export const getAnnouncementController = async (
     req: RequestWithUser & { params: ResourceParams },
     res: Response
 ): Promise<void> => {
-    const announcement = await findAnnouncement(
+    res.json(await findAnnouncement(
         req.params.id,
         requireEffectiveChoirObjectId(req)
-    );
-    res.json(announcement);
+    ));
 };
 
 export const createAnnouncementController = async (
@@ -64,13 +67,47 @@ export const createAnnouncementController = async (
     res: Response
 ): Promise<void> => {
     const input = parseAnnouncementInput(req);
+    const choirId = requireEffectiveChoirObjectId(req);
+    const actorUserId = requireAuthenticatedUserId(req);
+    const announcementId = new Types.ObjectId();
+    const uploaded = req.file
+        ? await uploadTenantMedia({
+            file: req.file,
+            choirId,
+            actorUserId,
+            ownerType: 'ANNOUNCEMENT',
+            category: 'announcements'
+        })
+        : null;
+
     const announcement = await Announcement.create({
+        _id: announcementId,
         ...input,
-        imageUrl: req.file?.path ?? '',
-        imagePublicId: req.file?.filename ?? null,
-        choirId: requireEffectiveChoirObjectId(req),
-        createdBy: requireAuthenticatedUserId(req)
+        imageUrl: uploaded?.media.url ?? '',
+        imagePublicId: uploaded?.media.publicId ?? null,
+        imageResourceType: uploaded?.media.resourceType ?? null,
+        imageAssetId: uploaded?.asset._id ?? null,
+        choirId,
+        createdBy: actorUserId
+    }).catch(async (error: Error) => {
+        if (uploaded) {
+            await discardPendingMedia(
+                uploaded.asset._id,
+                choirId,
+                'Announcement creation failed'
+            );
+        }
+        throw error;
     });
+
+    if (uploaded) {
+        await attachMediaAsset(
+            uploaded.asset._id,
+            choirId,
+            'ANNOUNCEMENT',
+            announcement._id
+        );
+    }
 
     await registerLog({
         req,
@@ -97,24 +134,59 @@ export const updateAnnouncementController = async (
     req: RequestWithUser & { params: ResourceParams },
     res: Response
 ): Promise<void> => {
-    const announcement = await findAnnouncement(
-        req.params.id,
-        requireEffectiveChoirObjectId(req)
-    );
+    const choirId = requireEffectiveChoirObjectId(req);
+    const actorUserId = requireAuthenticatedUserId(req);
+    const announcement = await findAnnouncement(req.params.id, choirId);
     const before = announcement.toObject();
     const input = parseAnnouncementInput(req);
-
-    if (req.file) {
-        await deleteFromCloudinary(announcement.imagePublicId ?? '');
-        announcement.imageUrl = req.file.path;
-        announcement.imagePublicId = req.file.filename;
-    }
+    const previousAssetId = announcement.imageAssetId;
+    const uploaded = req.file
+        ? await uploadTenantMedia({
+            file: req.file,
+            choirId,
+            actorUserId,
+            ownerType: 'ANNOUNCEMENT',
+            category: 'announcements'
+        })
+        : null;
 
     announcement.title = input.title;
     announcement.content = input.content;
     announcement.isPublic = input.isPublic;
-    announcement.updatedBy = requireAuthenticatedUserId(req);
-    await announcement.save();
+    announcement.updatedBy = actorUserId;
+
+    if (uploaded) {
+        announcement.imageUrl = uploaded.media.url;
+        announcement.imagePublicId = uploaded.media.publicId;
+        announcement.imageResourceType = uploaded.media.resourceType;
+        announcement.imageAssetId = uploaded.asset._id;
+    }
+
+    await announcement.save().catch(async (error: Error) => {
+        if (uploaded) {
+            await discardPendingMedia(
+                uploaded.asset._id,
+                choirId,
+                'Announcement update failed'
+            );
+        }
+        throw error;
+    });
+
+    if (uploaded) {
+        await attachMediaAsset(
+            uploaded.asset._id,
+            choirId,
+            'ANNOUNCEMENT',
+            announcement._id
+        );
+        await deleteOwnedMedia({
+            assetId: previousAssetId,
+            choirId,
+            ownerType: 'ANNOUNCEMENT',
+            ownerId: announcement._id
+        });
+    }
 
     await registerLog({
         req,
@@ -131,13 +203,17 @@ export const deleteAnnouncementController = async (
     req: RequestWithUser & { params: ResourceParams },
     res: Response
 ): Promise<void> => {
-    const announcement = await findAnnouncement(
-        req.params.id,
-        requireEffectiveChoirObjectId(req)
-    );
+    const choirId = requireEffectiveChoirObjectId(req);
+    const announcement = await findAnnouncement(req.params.id, choirId);
     const before = announcement.toObject();
-    await deleteFromCloudinary(announcement.imagePublicId ?? '');
+    const assetId = announcement.imageAssetId;
     await announcement.deleteOne();
+    await deleteOwnedMedia({
+        assetId,
+        choirId,
+        ownerType: 'ANNOUNCEMENT',
+        ownerId: announcement._id
+    });
 
     await registerLog({
         req,

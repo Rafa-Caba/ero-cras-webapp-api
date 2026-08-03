@@ -6,6 +6,7 @@ import {
     assertSameChoirRelations
 } from '../services/tenantRelation.service';
 import type { StoredJsonValue } from '../types/content.types';
+import type { MediaResourceType } from '../types/media.types';
 import User from './User';
 
 export type MessageType =
@@ -31,7 +32,9 @@ export interface IChatMessage extends Document<Types.ObjectId> {
     filename?: string;
     imageUrl?: string;
     audioUrl?: string;
-    imagePublicId?: string;
+    mediaPublicId?: string;
+    mediaResourceType?: MediaResourceType | null;
+    mediaAssetId?: Types.ObjectId | null;
     reactions: ChatReaction[];
     replyTo?: Types.ObjectId | null;
     createdBy: Types.ObjectId;
@@ -57,7 +60,9 @@ const ChatMessageSchema = new Schema<IChatMessage>(
         filename: { type: String, default: '' },
         imageUrl: { type: String, default: '' },
         audioUrl: { type: String, default: '' },
-        imagePublicId: { type: String, default: '' },
+        mediaPublicId: { type: String, default: '' },
+        mediaResourceType: { type: String, enum: ['image', 'video', 'raw'], default: null },
+        mediaAssetId: { type: Schema.Types.ObjectId, ref: 'MediaAsset', default: null },
         reactions: [
             {
                 emoji: { type: String, required: true },

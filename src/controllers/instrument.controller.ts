@@ -1,21 +1,27 @@
 // src/controllers/instrument.controller.ts
 
 import type { Response } from 'express';
+import { Types } from 'mongoose';
 import { AppError } from '../errors/AppError';
-import { deleteFromCloudinary } from '../middlewares/cloudinaryStorage';
 import Instrument, { type IInstrument } from '../models/Instrument';
 import Member from '../models/Member';
 import User from '../models/User';
-import type { RequestWithUser } from '../types/auth.types';
-import { registerLog } from '../utils/logger';
+import {
+    attachMediaAsset,
+    deleteOwnedMedia,
+    discardPendingMedia,
+    uploadTenantMedia
+} from '../services/media.service';
 import {
     buildTenantResourceFilter,
     createTenantResourceNotFoundError,
     requireAuthenticatedUserId,
     requireEffectiveChoirObjectId
 } from '../services/tenantScope.service';
-import { parseInstrumentInput } from '../validations/schemas/resource.schemas';
+import type { RequestWithUser } from '../types/auth.types';
+import { registerLog } from '../utils/logger';
 import { parseObjectId } from '../validations/schemas/common.schemas';
+import { parseInstrumentInput } from '../validations/schemas/resource.schemas';
 
 interface ResourceParams {
     readonly id: string;
@@ -27,12 +33,10 @@ const findInstrument = async (
 ): Promise<IInstrument> => {
     return Instrument
         .findOne(buildTenantResourceFilter(id, choirId))
-        .orFail(() =>
-            createTenantResourceNotFoundError(
-                'INSTRUMENT_NOT_FOUND',
-                'Instrument not found'
-            )
-        )
+        .orFail(() => createTenantResourceNotFoundError(
+            'INSTRUMENT_NOT_FOUND',
+            'Instrument not found'
+        ))
         .exec();
 };
 
@@ -43,31 +47,65 @@ export const listInstrumentsController = async (
     const instruments = await Instrument.find({
         choirId: requireEffectiveChoirObjectId(req)
     }).sort({ order: 1, name: 1 });
-    res.json({ instruments });
+    res.json(instruments);
 };
 
 export const getInstrumentController = async (
     req: RequestWithUser & { params: ResourceParams },
     res: Response
 ): Promise<void> => {
-    const instrument = await findInstrument(
+    res.json(await findInstrument(
         req.params.id,
         requireEffectiveChoirObjectId(req)
-    );
-    res.json(instrument);
+    ));
 };
 
 export const createInstrumentController = async (
     req: RequestWithUser,
     res: Response
 ): Promise<void> => {
+    const input = parseInstrumentInput(req);
+    const choirId = requireEffectiveChoirObjectId(req);
+    const actorUserId = requireAuthenticatedUserId(req);
+    const instrumentId = new Types.ObjectId();
+    const uploaded = req.file
+        ? await uploadTenantMedia({
+            file: req.file,
+            choirId,
+            actorUserId,
+            ownerType: 'INSTRUMENT',
+            category: 'instruments'
+        })
+        : null;
+
     const instrument = await Instrument.create({
-        ...parseInstrumentInput(req),
-        iconUrl: req.file?.path ?? '',
-        iconPublicId: req.file?.filename ?? null,
-        choirId: requireEffectiveChoirObjectId(req),
-        createdBy: requireAuthenticatedUserId(req)
+        _id: instrumentId,
+        ...input,
+        iconUrl: uploaded?.media.url ?? '',
+        iconPublicId: uploaded?.media.publicId ?? null,
+        iconResourceType: uploaded?.media.resourceType ?? null,
+        iconAssetId: uploaded?.asset._id ?? null,
+        choirId,
+        createdBy: actorUserId
+    }).catch(async (error: Error) => {
+        if (uploaded) {
+            await discardPendingMedia(
+                uploaded.asset._id,
+                choirId,
+                'Instrument creation failed'
+            );
+        }
+        throw error;
     });
+
+    if (uploaded) {
+        await attachMediaAsset(
+            uploaded.asset._id,
+            choirId,
+            'INSTRUMENT',
+            instrument._id
+        );
+    }
 
     await registerLog({
         req,
@@ -84,18 +122,21 @@ export const updateInstrumentController = async (
     req: RequestWithUser & { params: ResourceParams },
     res: Response
 ): Promise<void> => {
-    const instrument = await findInstrument(
-        req.params.id,
-        requireEffectiveChoirObjectId(req)
-    );
+    const choirId = requireEffectiveChoirObjectId(req);
+    const actorUserId = requireAuthenticatedUserId(req);
+    const instrument = await findInstrument(req.params.id, choirId);
     const before = instrument.toObject();
     const input = parseInstrumentInput(req);
-
-    if (req.file) {
-        await deleteFromCloudinary(instrument.iconPublicId ?? '');
-        instrument.iconUrl = req.file.path;
-        instrument.iconPublicId = req.file.filename;
-    }
+    const previousAssetId = instrument.iconAssetId;
+    const uploaded = req.file
+        ? await uploadTenantMedia({
+            file: req.file,
+            choirId,
+            actorUserId,
+            ownerType: 'INSTRUMENT',
+            category: 'instruments'
+        })
+        : null;
 
     instrument.name = input.name;
     instrument.slug = input.slug;
@@ -103,8 +144,40 @@ export const updateInstrumentController = async (
     instrument.iconKey = input.iconKey;
     instrument.isActive = input.isActive;
     instrument.order = input.order;
-    instrument.updatedBy = requireAuthenticatedUserId(req);
-    await instrument.save();
+    instrument.updatedBy = actorUserId;
+
+    if (uploaded) {
+        instrument.iconUrl = uploaded.media.url;
+        instrument.iconPublicId = uploaded.media.publicId;
+        instrument.iconResourceType = uploaded.media.resourceType;
+        instrument.iconAssetId = uploaded.asset._id;
+    }
+
+    await instrument.save().catch(async (error: Error) => {
+        if (uploaded) {
+            await discardPendingMedia(
+                uploaded.asset._id,
+                choirId,
+                'Instrument update failed'
+            );
+        }
+        throw error;
+    });
+
+    if (uploaded) {
+        await attachMediaAsset(
+            uploaded.asset._id,
+            choirId,
+            'INSTRUMENT',
+            instrument._id
+        );
+        await deleteOwnedMedia({
+            assetId: previousAssetId,
+            choirId,
+            ownerType: 'INSTRUMENT',
+            ownerId: instrument._id
+        });
+    }
 
     await registerLog({
         req,
@@ -123,12 +196,12 @@ export const deleteInstrumentController = async (
 ): Promise<void> => {
     const choirId = requireEffectiveChoirObjectId(req);
     const instrument = await findInstrument(req.params.id, choirId);
-    const references = await Promise.all([
+    const [userReference, memberReference] = await Promise.all([
         User.exists({ choirId, instrumentId: instrument._id }),
         Member.exists({ choirId, instrumentId: instrument._id })
     ]);
 
-    if (references.some(Boolean)) {
+    if (userReference || memberReference) {
         throw new AppError(
             409,
             'INSTRUMENT_IN_USE',
@@ -137,8 +210,14 @@ export const deleteInstrumentController = async (
     }
 
     const before = instrument.toObject();
-    await deleteFromCloudinary(instrument.iconPublicId ?? '');
+    const assetId = instrument.iconAssetId;
     await instrument.deleteOne();
+    await deleteOwnedMedia({
+        assetId,
+        choirId,
+        ownerType: 'INSTRUMENT',
+        ownerId: instrument._id
+    });
 
     await registerLog({
         req,

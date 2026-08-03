@@ -1,6 +1,7 @@
 // src/models/GalleryImage.ts
 
 import { Document, Schema, Types, model } from 'mongoose';
+import type { MediaResourceType } from '../types/media.types';
 
 export type GalleryMediaType = 'IMAGE' | 'VIDEO';
 
@@ -9,6 +10,8 @@ export interface IGalleryImage extends Document<Types.ObjectId> {
     description: string;
     imageUrl: string;
     imagePublicId?: string | null;
+    mediaResourceType?: MediaResourceType | null;
+    mediaAssetId?: Types.ObjectId | null;
     mediaType: GalleryMediaType;
     imageStart: boolean;
     imageTopBar: boolean;
@@ -30,6 +33,8 @@ const GalleryImageSchema = new Schema<IGalleryImage>(
         description: { type: String, default: '' },
         imageUrl: { type: String, required: true },
         imagePublicId: { type: String, default: null },
+        mediaResourceType: { type: String, enum: ['image', 'video', 'raw'], default: null },
+        mediaAssetId: { type: Schema.Types.ObjectId, ref: 'MediaAsset', default: null },
         mediaType: {
             type: String,
             enum: ['IMAGE', 'VIDEO'],

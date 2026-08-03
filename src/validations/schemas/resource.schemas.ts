@@ -245,14 +245,15 @@ export const parseChatMessageInput = (req: Request): ChatMessageInput => {
     const replyTo = readOptionalObjectId(body, 'replyTo') ??
         readOptionalObjectId(body, 'replyToId');
 
+    const mediaAssetId = readOptionalObjectId(body, 'mediaAssetId');
+
     return {
         content: readRequiredContent(body, 'content'),
         type: readMessageType(readOptionalString(body, 'type')),
-        fileUrl: readOptionalString(body, 'fileUrl') ?? '',
         filename: readOptionalString(body, 'filename') ?? '',
-        imageUrl: readOptionalString(body, 'imageUrl') ?? '',
-        audioUrl: readOptionalString(body, 'audioUrl') ?? '',
-        imagePublicId: readOptionalString(body, 'imagePublicId') ?? '',
+        mediaAssetId: mediaAssetId === undefined
+            ? undefined
+            : mediaAssetId?.toString() ?? null,
         replyTo: replyTo === undefined
             ? undefined
             : replyTo?.toString() ?? null

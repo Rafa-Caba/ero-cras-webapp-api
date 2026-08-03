@@ -15,6 +15,8 @@ import type {
 } from '../types/user.types';
 import { revokeAllUserSessions } from './session.service';
 import { disconnectUserSockets } from './socketRegistry.service';
+import { unregisterAllUserPushDevices } from './pushDevice.service';
+import type { MediaResourceType } from '../types/media.types';
 
 const PASSWORD_SALT_ROUNDS = 12;
 
@@ -125,7 +127,9 @@ export const createTenantUser = async (
     choirId: Types.ObjectId,
     actorUserId: Types.ObjectId,
     imageUrl: string,
-    imagePublicId: string | null
+    imagePublicId: string | null,
+    imageResourceType: MediaResourceType | null,
+    imageAssetId: Types.ObjectId | null
 ): Promise<{ readonly user: IUser; readonly temporaryPassword: string }> => {
     const temporaryPassword = input.temporaryPassword ?? generateTemporaryPassword();
     const hashedPassword = await bcrypt.hash(
@@ -147,6 +151,8 @@ export const createTenantUser = async (
         bio: input.bio ?? '',
         imageUrl,
         imagePublicId,
+        imageResourceType,
+        imageAssetId,
         choirId,
         isActive: true,
         mustChangePassword: true,
@@ -186,6 +192,10 @@ export const updateTenantUser = async (
 
     if (roleChanged) {
         await revokeAllUserSessions(user._id);
+        await unregisterAllUserPushDevices(
+            user._id,
+            'User role changed'
+        );
         disconnectUserSockets(
             user._id.toString(),
             'USER_ROLE_CHANGED',
@@ -231,6 +241,12 @@ export const setTenantUserActiveStatus = async (
 
     if (statusChanged) {
         await revokeAllUserSessions(user._id);
+        if (!isActive) {
+            await unregisterAllUserPushDevices(
+                user._id,
+                'User account suspended'
+            );
+        }
         disconnectUserSockets(
             user._id.toString(),
             isActive ? 'USER_STATUS_CHANGED' : 'USER_SUSPENDED',
@@ -255,6 +271,10 @@ export const resetTenantUserPassword = async (
     user.updatedBy = actorUserId;
     await user.save();
     await revokeAllUserSessions(user._id);
+    await unregisterAllUserPushDevices(
+        user._id,
+        'User password reset'
+    );
     disconnectUserSockets(
         user._id.toString(),
         'PASSWORD_RESET',
@@ -266,6 +286,7 @@ export const resetTenantUserPassword = async (
 export const deleteTenantUser = async (user: IUser): Promise<void> => {
     await assertAdminRemains(user, undefined, false);
     await revokeAllUserSessions(user._id);
+    await unregisterAllUserPushDevices(user._id, 'User account deleted');
     disconnectUserSockets(
         user._id.toString(),
         'USER_DELETED',

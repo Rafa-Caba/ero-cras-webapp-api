@@ -13,11 +13,14 @@ import {
 } from '../services/auth.service';
 import type { RequestWithUser } from '../types/auth.types';
 import type { ApiMessageResponse } from '../types/http.types';
+import { Types } from 'mongoose';
+import { unregisterPushDevice } from '../services/pushDevice.service';
 import {
     AuthRequestBody,
     parseBootstrapSuperAdminBody,
     parseBootstrapTokenHeader,
     parseChangePasswordBody,
+    parseLogoutBody,
     parsePlatformLoginBody,
     parseRefreshSessionBody,
     parseTenantLoginBody
@@ -100,8 +103,15 @@ export const logoutController = async (
         );
     }
 
-    const input = parseRefreshSessionBody(req.body);
+    const input = parseLogoutBody(req.body);
     await revokeRefreshToken(req.user.id, input.refreshToken);
+
+    if (input.deviceId) {
+        await unregisterPushDevice(
+            new Types.ObjectId(req.user.id),
+            input.deviceId
+        );
+    }
 
     res.json({ message: 'Session closed successfully' });
 };

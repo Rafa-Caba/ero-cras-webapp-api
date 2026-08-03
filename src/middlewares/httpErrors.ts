@@ -1,6 +1,7 @@
 // src/middlewares/httpErrors.ts
 
 import type { NextFunction, Request, Response } from 'express';
+import multer from 'multer';
 import { AppError } from '../errors/AppError';
 import type { ApiErrorResponse } from '../types/http.types';
 
@@ -25,6 +26,20 @@ export const errorHandler = (
             message: error.message,
             code: error.code,
             details: error.details
+        });
+        return;
+    }
+
+    if (error instanceof multer.MulterError) {
+        const isSizeLimit = error.code === 'LIMIT_FILE_SIZE';
+
+        res.status(isSizeLimit ? 413 : 400).json({
+            message: isSizeLimit
+                ? 'The uploaded file exceeds the allowed size limit'
+                : 'The uploaded file could not be processed',
+            code: isSizeLimit
+                ? 'MEDIA_FILE_TOO_LARGE'
+                : 'MEDIA_UPLOAD_ERROR'
         });
         return;
     }

@@ -1,6 +1,7 @@
 // src/models/Instrument.ts
 
 import { Document, Schema, Types, model } from 'mongoose';
+import type { MediaResourceType } from '../types/media.types';
 
 export interface IInstrument extends Document<Types.ObjectId> {
     name: string;
@@ -9,6 +10,8 @@ export interface IInstrument extends Document<Types.ObjectId> {
     iconKey: string;
     iconUrl?: string;
     iconPublicId?: string | null;
+    iconResourceType?: MediaResourceType | null;
+    iconAssetId?: Types.ObjectId | null;
     isActive: boolean;
     order: number;
     choirId: Types.ObjectId;
@@ -28,6 +31,8 @@ const InstrumentSchema = new Schema<IInstrument>(
         iconKey: { type: String, required: true, trim: true },
         iconUrl: { type: String, default: '' },
         iconPublicId: { type: String, default: null },
+        iconResourceType: { type: String, enum: ['image', 'video', 'raw'], default: null },
+        iconAssetId: { type: Schema.Types.ObjectId, ref: 'MediaAsset', default: null },
         isActive: { type: Boolean, default: true },
         order: { type: Number, default: 0 },
         choirId: {

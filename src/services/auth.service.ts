@@ -26,6 +26,7 @@ import {
     verifyRefreshToken
 } from './token.service';
 import { disconnectUserSockets } from './socketRegistry.service';
+import { unregisterAllUserPushDevices } from './pushDevice.service';
 
 const BOOTSTRAP_PLATFORM_ACCOUNT_KEY = 'bootstrap-super-admin';
 const PASSWORD_HASH_ROUNDS = 12;
@@ -411,6 +412,10 @@ export const changeAuthenticatedPassword = async (
     await RefreshToken.updateMany(
         { userId: user._id, revokedAt: null },
         { $set: { revokedAt: new Date() } }
+    );
+    await unregisterAllUserPushDevices(
+        user._id,
+        'User password changed'
     );
 
     disconnectUserSockets(

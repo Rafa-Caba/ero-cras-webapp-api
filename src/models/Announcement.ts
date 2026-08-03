@@ -2,12 +2,15 @@
 
 import { Document, Schema, Types, model } from 'mongoose';
 import type { StoredJsonValue } from '../types/content.types';
+import type { MediaResourceType } from '../types/media.types';
 
 export interface IAnnouncement extends Document<Types.ObjectId> {
     title: string;
     content: StoredJsonValue;
     imageUrl?: string;
     imagePublicId?: string | null;
+    imageResourceType?: MediaResourceType | null;
+    imageAssetId?: Types.ObjectId | null;
     isPublic: boolean;
     choirId: Types.ObjectId;
     createdBy?: Types.ObjectId;
@@ -22,6 +25,8 @@ const AnnouncementSchema = new Schema<IAnnouncement>(
         content: { type: Schema.Types.Mixed, required: true },
         imageUrl: { type: String, default: '' },
         imagePublicId: { type: String, default: null },
+        imageResourceType: { type: String, enum: ['image', 'video', 'raw'], default: null },
+        imageAssetId: { type: Schema.Types.ObjectId, ref: 'MediaAsset', default: null },
         isPublic: { type: Boolean, default: false },
         choirId: {
             type: Schema.Types.ObjectId,

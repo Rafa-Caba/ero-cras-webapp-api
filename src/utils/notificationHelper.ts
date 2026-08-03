@@ -1,9 +1,11 @@
 // src/utils/notificationHelper.ts
 
-import { Types, type FilterQuery } from 'mongoose';
-import User, { type IUser } from '../models/User';
+import { Types } from 'mongoose';
 import type { StoredJsonValue } from '../types/content.types';
-import { sendPushNotification } from './pushNotifications';
+import {
+    findActiveChoirDevices,
+    sendPushToDevices
+} from '../services/expoPush.service';
 
 interface CommunityNotificationItem {
     readonly id?: string;
@@ -26,6 +28,53 @@ const getChatBody = (item: CommunityNotificationItem): string => {
     return 'Mensaje recibido';
 };
 
+const deliverCommunityNotification = async (
+    choirId: string,
+    senderId: string | undefined,
+    senderName: string,
+    category: CommunityNotificationCategory,
+    item: CommunityNotificationItem
+): Promise<void> => {
+    const choirObjectId = new Types.ObjectId(choirId);
+    const excludedUserId = senderId && Types.ObjectId.isValid(senderId)
+        ? new Types.ObjectId(senderId)
+        : undefined;
+    const devices = await findActiveChoirDevices(
+        choirObjectId,
+        excludedUserId
+    );
+
+    if (devices.length === 0) {
+        return;
+    }
+
+    const itemId = item.id ?? '';
+
+    if (category === 'CHAT') {
+        await sendPushToDevices(devices, {
+            title: `Nuevo mensaje de ${senderName}`,
+            body: getChatBody(item),
+            data: { type: 'CHAT', messageId: itemId }
+        });
+        return;
+    }
+
+    if (category === 'ANNOUNCEMENT') {
+        await sendPushToDevices(devices, {
+            title: '📢 Nuevo aviso',
+            body: item.title ?? 'Revísalo en la app',
+            data: { type: 'ANNOUNCEMENT', id: itemId }
+        });
+        return;
+    }
+
+    await sendPushToDevices(devices, {
+        title: '📝 Nuevo blog',
+        body: item.title ?? 'Lee la nueva publicación',
+        data: { type: 'BLOG', id: itemId }
+    });
+};
+
 export const notifyCommunity = async (
     choirId: string,
     senderId: string | undefined,
@@ -33,49 +82,13 @@ export const notifyCommunity = async (
     category: CommunityNotificationCategory,
     item: CommunityNotificationItem
 ): Promise<void> => {
-    const filter: FilterQuery<IUser> = {
-        choirId: new Types.ObjectId(choirId),
-        isActive: true,
-        pushToken: { $exists: true, $ne: null }
-    };
-
-    if (senderId && Types.ObjectId.isValid(senderId)) {
-        filter._id = { $ne: new Types.ObjectId(senderId) };
-    }
-
-    const users = await User.find(filter).select('pushToken');
-    const tokens = users
-        .map((user) => user.pushToken)
-        .filter((token): token is string =>
-            typeof token === 'string' && token.length > 0
-        );
-
-    if (tokens.length === 0) {
-        return;
-    }
-
-    const itemId = item.id ?? '';
-    let title: string;
-    let body: string;
-    let data: Record<string, string>;
-
-    switch (category) {
-        case 'CHAT':
-            title = `Nuevo mensaje de ${senderName}`;
-            body = getChatBody(item);
-            data = { type: 'CHAT', messageId: itemId };
-            break;
-        case 'ANNOUNCEMENT':
-            title = '📢 Nuevo aviso';
-            body = item.title ?? 'Revísalo en la app';
-            data = { type: 'ANNOUNCEMENT', id: itemId };
-            break;
-        case 'BLOG':
-            title = '📝 Nuevo blog';
-            body = item.title ?? 'Lee la nueva publicación';
-            data = { type: 'BLOG', id: itemId };
-            break;
-    }
-
-    await sendPushNotification(tokens, title, body, data);
+    await deliverCommunityNotification(
+        choirId,
+        senderId,
+        senderName,
+        category,
+        item
+    ).catch((error: Error) => {
+        console.error('Push notification delivery failed:', error.message);
+    });
 };

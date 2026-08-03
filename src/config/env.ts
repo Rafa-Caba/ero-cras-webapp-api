@@ -96,6 +96,17 @@ export interface EnvironmentConfig {
         readonly enabled: boolean;
         readonly confirmation?: string;
     };
+    readonly cloudinary: {
+        readonly cloudName: string;
+        readonly apiKey: string;
+        readonly apiSecret: string;
+        readonly baseFolder: string;
+    };
+    readonly expoPush: {
+        readonly accessToken?: string;
+        readonly receiptDelayMs: number;
+        readonly receiptIntervalMs: number;
+    };
 }
 
 const corsOrigins = requireString('CORS_ORIGINS')
@@ -123,8 +134,8 @@ export const env: EnvironmentConfig = {
             'JWT_REFRESH_EXPIRES_IN_SECONDS',
             604800
         ),
-        issuer: optionalString('JWT_ISSUER') ?? 'ero-cras-api',
-        audience: optionalString('JWT_AUDIENCE') ?? 'ero-cras-clients'
+        issuer: optionalString('JWT_ISSUER') ?? 'choirs-api',
+        audience: optionalString('JWT_AUDIENCE') ?? 'choirs-clients'
     },
     bootstrap: {
         enabled: allowSuperAdminBootstrap,
@@ -133,5 +144,22 @@ export const env: EnvironmentConfig = {
     databaseReset: {
         enabled: parseBoolean('ALLOW_DATABASE_RESET', false),
         confirmation: optionalString('DATABASE_RESET_CONFIRMATION')
+    },
+    cloudinary: {
+        cloudName: requireString('CLOUDINARY_CLOUD_NAME'),
+        apiKey: requireString('CLOUDINARY_API_KEY'),
+        apiSecret: requireString('CLOUDINARY_API_SECRET'),
+        baseFolder: optionalString('CLOUDINARY_BASE_FOLDER') ?? 'choirs-media'
+    },
+    expoPush: {
+        accessToken: optionalString('EXPO_PUSH_ACCESS_TOKEN'),
+        receiptDelayMs: parsePositiveInteger(
+            'EXPO_PUSH_RECEIPT_DELAY_MS',
+            15000
+        ),
+        receiptIntervalMs: parsePositiveInteger(
+            'EXPO_PUSH_RECEIPT_INTERVAL_MS',
+            60000
+        )
     }
 };

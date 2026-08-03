@@ -1,6 +1,7 @@
 // src/models/Choir.ts
 
 import { Document, Schema, Types, model } from 'mongoose';
+import type { MediaResourceType } from '../types/media.types';
 
 export interface IChoir extends Document<Types.ObjectId> {
     name: string;
@@ -8,6 +9,8 @@ export interface IChoir extends Document<Types.ObjectId> {
     description?: string;
     logoUrl?: string;
     logoPublicId?: string | null;
+    logoResourceType?: MediaResourceType | null;
+    logoAssetId?: Types.ObjectId | null;
     isActive: boolean;
     createdBy?: Types.ObjectId;
     updatedBy?: Types.ObjectId;
@@ -26,6 +29,8 @@ const ChoirSchema = new Schema<IChoir>(
         description: { type: String, default: '' },
         logoUrl: { type: String, default: '' },
         logoPublicId: { type: String, default: null },
+        logoResourceType: { type: String, enum: ['image', 'video', 'raw'], default: null },
+        logoAssetId: { type: Schema.Types.ObjectId, ref: 'MediaAsset', default: null },
         isActive: { type: Boolean, default: true },
         createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
         updatedBy: { type: Schema.Types.ObjectId, ref: 'User' }

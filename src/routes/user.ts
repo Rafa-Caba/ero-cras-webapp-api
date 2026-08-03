@@ -12,7 +12,6 @@ import {
     searchUsersController,
     setUserActiveStatusController,
     updateOwnProfileController,
-    updateOwnPushTokenController,
     updateOwnThemeController,
     updateUserController
 } from '../controllers/user.controller';
@@ -24,7 +23,6 @@ const router = express.Router();
 const requireUserManager = requireRole('SUPER_ADMIN', 'ADMIN');
 
 router.get('/me', verifyPlatformToken, getOwnProfileController);
-router.put('/me/push-token', verifyPlatformToken, updateOwnPushTokenController);
 router.put('/me/theme', verifyTenantToken, updateOwnThemeController);
 router.put(
     '/me',

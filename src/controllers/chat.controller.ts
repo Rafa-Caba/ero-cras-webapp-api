@@ -2,18 +2,21 @@
 
 import type { Response } from 'express';
 import type { FilterQuery } from 'mongoose';
-import type { ChoirSocketServer } from '../types/socket.types';
 import { AppError } from '../errors/AppError';
+import ChatMessage, { type IChatMessage, type MessageType } from '../models/ChatMessage';
 import {
-    streamUpload
-} from '../middlewares/cloudinaryStorage';
-import ChatMessage, { type IChatMessage } from '../models/ChatMessage';
+    attachMediaAsset,
+    discardPendingMedia,
+    getPendingMediaAsset,
+    uploadTenantMedia
+} from '../services/media.service';
 import {
     requireAuthenticatedUserId,
     requireEffectiveChoirId,
     requireEffectiveChoirObjectId
 } from '../services/tenantScope.service';
 import type { RequestWithUser } from '../types/auth.types';
+import type { ChoirSocketServer } from '../types/socket.types';
 import { registerLog } from '../utils/logger';
 import { notifyCommunity } from '../utils/notificationHelper';
 import {
@@ -27,10 +30,11 @@ interface ChatMessageParams {
     readonly messageId: string;
 }
 
-interface UploadChatResponse {
+interface ChatUploadResponse {
+    readonly assetId: string;
     readonly fileUrl: string;
     readonly filename: string;
-    readonly cloudinaryPublicId: string;
+    readonly resourceType: string;
 }
 
 type ReactionLogAction = 'add_reaction' | 'remove_reaction';
@@ -59,14 +63,12 @@ const emitMessage = (
 ): void => {
     const io = getSocketServer(req);
 
-    if (!io) {
-        return;
+    if (io) {
+        io.to(`choir:${requireEffectiveChoirId(req)}`).emit(
+            eventName,
+            message.toJSON()
+        );
     }
-
-    io.to(`choir:${requireEffectiveChoirId(req)}`).emit(
-        eventName,
-        message.toJSON()
-    );
 };
 
 const requireUpload = (req: RequestWithUser): Express.Multer.File => {
@@ -77,11 +79,48 @@ const requireUpload = (req: RequestWithUser): Express.Multer.File => {
     return req.file;
 };
 
-const buildUploadResponse = (file: Express.Multer.File): UploadChatResponse => {
+const assertChatMediaMatchesType = (
+    messageType: MessageType,
+    mimeType: string
+): void => {
+    const valid =
+        (messageType === 'IMAGE' && mimeType.startsWith('image/')) ||
+        (messageType === 'AUDIO' && mimeType.startsWith('audio/')) ||
+        (messageType === 'VIDEO' && mimeType.startsWith('video/')) ||
+        (messageType === 'MEDIA' && (
+            mimeType.startsWith('audio/') || mimeType.startsWith('video/')
+        )) ||
+        (messageType === 'FILE' && (
+            !mimeType.startsWith('image/') &&
+            !mimeType.startsWith('audio/') &&
+            !mimeType.startsWith('video/')
+        ));
+
+    if (!valid) {
+        throw new AppError(
+            400,
+            'CHAT_MEDIA_TYPE_MISMATCH',
+            'The uploaded media does not match the chat message type'
+        );
+    }
+};
+
+const uploadChatAsset = async (
+    req: RequestWithUser
+): Promise<ChatUploadResponse> => {
+    const result = await uploadTenantMedia({
+        file: requireUpload(req),
+        choirId: requireEffectiveChoirObjectId(req),
+        actorUserId: requireAuthenticatedUserId(req),
+        ownerType: 'CHAT',
+        category: 'chat'
+    });
+
     return {
-        fileUrl: file.path,
-        filename: file.originalname || file.filename,
-        cloudinaryPublicId: file.filename || ''
+        assetId: result.media.assetId,
+        fileUrl: result.media.url,
+        filename: result.asset.originalName,
+        resourceType: result.media.resourceType
     };
 };
 
@@ -134,16 +173,67 @@ export const createChatMessageController = async (
 ): Promise<void> => {
     const input = parseChatMessageInput(req);
     const actorUserId = requireAuthenticatedUserId(req);
+    const choirId = requireEffectiveChoirObjectId(req);
+    const requiresMedia = input.type !== 'TEXT' && input.type !== 'REACTION';
+
+    if (requiresMedia && !input.mediaAssetId) {
+        throw new AppError(
+            400,
+            'CHAT_MEDIA_REQUIRED',
+            'A mediaAssetId is required for this chat message type'
+        );
+    }
+
+    if (!requiresMedia && input.mediaAssetId) {
+        throw new AppError(
+            400,
+            'CHAT_MEDIA_NOT_ALLOWED',
+            'This chat message type cannot include media'
+        );
+    }
+
+    const asset = input.mediaAssetId
+        ? await getPendingMediaAsset(
+            input.mediaAssetId,
+            choirId,
+            actorUserId,
+            'CHAT'
+        )
+        : null;
+
+    if (asset) {
+        assertChatMediaMatchesType(input.type, asset.mimeType);
+    }
+
     const message = await ChatMessage.create({
-        ...input,
+        content: input.content,
+        type: input.type,
+        filename: asset?.originalName ?? '',
+        fileUrl: asset && ['FILE', 'MEDIA', 'VIDEO'].includes(input.type)
+            ? asset.url
+            : '',
+        imageUrl: asset && input.type === 'IMAGE' ? asset.url : '',
+        audioUrl: asset && input.type === 'AUDIO' ? asset.url : '',
+        mediaPublicId: asset?.publicId ?? '',
+        mediaResourceType: asset?.resourceType ?? null,
+        mediaAssetId: asset?._id ?? null,
         replyTo: input.replyTo
             ? parseObjectId(input.replyTo, 'replyTo')
             : null,
         author: actorUserId,
         createdBy: actorUserId,
-        choirId: requireEffectiveChoirObjectId(req),
+        choirId,
         reactions: []
+    }).catch(async (error: Error) => {
+        if (asset) {
+            await discardPendingMedia(asset._id, choirId, 'Chat message creation failed');
+        }
+        throw error;
     });
+
+    if (asset) {
+        await attachMediaAsset(asset._id, choirId, 'CHAT', message._id);
+    }
 
     await populateMessage(message);
     emitMessage(req, 'new-message', message);
@@ -171,32 +261,21 @@ export const uploadChatImageController = async (
     req: RequestWithUser,
     res: Response
 ): Promise<void> => {
-    res.status(201).json(buildUploadResponse(requireUpload(req)));
+    res.status(201).json(await uploadChatAsset(req));
 };
 
 export const uploadChatMediaController = async (
     req: RequestWithUser,
     res: Response
 ): Promise<void> => {
-    res.status(201).json(buildUploadResponse(requireUpload(req)));
+    res.status(201).json(await uploadChatAsset(req));
 };
 
 export const uploadChatFileController = async (
     req: RequestWithUser,
     res: Response
 ): Promise<void> => {
-    const file = requireUpload(req);
-    const result = await streamUpload(
-        file.buffer,
-        file.originalname,
-        'auto'
-    );
-
-    res.status(201).json({
-        fileUrl: result.secure_url,
-        filename: file.originalname,
-        cloudinaryPublicId: result.public_id
-    });
+    res.status(201).json(await uploadChatAsset(req));
 };
 
 export const toggleChatReactionController = async (

@@ -2,6 +2,7 @@
 
 import { Document, Schema, Types, model } from 'mongoose';
 import { assertSameChoirRelation } from '../services/tenantRelation.service';
+import type { MediaResourceType } from '../types/media.types';
 import type { UserRole } from '../types/roles.types';
 import { USER_ROLES, isTenantRole } from '../types/roles.types';
 import Instrument from './Instrument';
@@ -17,12 +18,13 @@ export interface IUser extends Document<Types.ObjectId> {
     role: UserRole;
     imageUrl?: string;
     imagePublicId?: string | null;
+    imageResourceType?: MediaResourceType | null;
+    imageAssetId?: Types.ObjectId | null;
     instrumentId?: Types.ObjectId | null;
     instrumentLabel?: string;
     voice: boolean;
     bio?: string;
     themeId?: Types.ObjectId | null;
-    pushToken?: string | null;
     choirId?: Types.ObjectId | null;
     isActive: boolean;
     mustChangePassword: boolean;
@@ -61,6 +63,12 @@ const UserSchema = new Schema<IUser>(
         role: { type: String, enum: [...USER_ROLES], required: true },
         imageUrl: { type: String, default: '' },
         imagePublicId: { type: String, default: null },
+        imageResourceType: {
+            type: String,
+            enum: ['image', 'video', 'raw'],
+            default: null
+        },
+        imageAssetId: { type: Schema.Types.ObjectId, ref: 'MediaAsset', default: null },
         instrumentId: {
             type: Schema.Types.ObjectId,
             ref: 'Instrument',
@@ -70,7 +78,6 @@ const UserSchema = new Schema<IUser>(
         voice: { type: Boolean, default: false },
         bio: { type: String, default: '' },
         themeId: { type: Schema.Types.ObjectId, ref: 'Theme', default: null },
-        pushToken: { type: String, default: null },
         choirId: {
             type: Schema.Types.ObjectId,
             ref: 'Choir',

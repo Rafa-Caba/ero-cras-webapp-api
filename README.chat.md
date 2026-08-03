@@ -63,12 +63,12 @@ This module implements a **real-time group chat** system within the Ero Cras Adm
 
 ### `.env` (Frontend)
 ```env
-VITE_API_URL=https://ero-cras-webapp-api-production.up.railway.app
+VITE_API_URL=https://chiors-api-production.up.railway.app
 ```
 
 ### `.env` (Backend)
 ```env
-FRONTEND_URL=https://ero-cras-webapp.vercel.app
+FRONTEND_URL=https://choirs-webapp.vercel.app
 CLOUDINARY_URL=...
 ```
 

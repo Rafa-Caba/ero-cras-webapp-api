@@ -1,23 +1,29 @@
 // src/controllers/gallery.controller.ts
 
 import type { Response } from 'express';
+import { Types } from 'mongoose';
 import { AppError } from '../errors/AppError';
-import { deleteFromCloudinary } from '../middlewares/cloudinaryStorage';
 import GalleryImage, { type IGalleryImage } from '../models/GalleryImage';
-import type { RequestWithUser } from '../types/auth.types';
-import { registerLog } from '../utils/logger';
+import {
+    attachMediaAsset,
+    deleteOwnedMedia,
+    discardPendingMedia,
+    uploadTenantMedia
+} from '../services/media.service';
 import {
     buildTenantResourceFilter,
     createTenantResourceNotFoundError,
     requireAuthenticatedUserId,
     requireEffectiveChoirObjectId
 } from '../services/tenantScope.service';
-import { parseGalleryInput } from '../validations/schemas/resource.schemas';
+import type { RequestWithUser } from '../types/auth.types';
+import { registerLog } from '../utils/logger';
 import {
     parseObjectId,
     parseRequestBody,
     readOptionalBoolean
 } from '../validations/schemas/common.schemas';
+import { parseGalleryInput } from '../validations/schemas/resource.schemas';
 
 interface ResourceParams {
     readonly id: string;
@@ -51,12 +57,10 @@ const findImage = async (
 ): Promise<IGalleryImage> => {
     return GalleryImage
         .findOne(buildTenantResourceFilter(id, choirId))
-        .orFail(() =>
-            createTenantResourceNotFoundError(
-                'GALLERY_IMAGE_NOT_FOUND',
-                'Gallery image not found'
-            )
-        )
+        .orFail(() => createTenantResourceNotFoundError(
+            'GALLERY_IMAGE_NOT_FOUND',
+            'Gallery image not found'
+        ))
         .exec();
 };
 
@@ -77,11 +81,10 @@ export const getGalleryImageController = async (
     req: RequestWithUser & { params: ResourceParams },
     res: Response
 ): Promise<void> => {
-    const image = await findImage(
+    res.json(await findImage(
         req.params.id,
         requireEffectiveChoirObjectId(req)
-    );
-    res.json(image);
+    ));
 };
 
 export const createGalleryImageController = async (
@@ -96,13 +99,58 @@ export const createGalleryImageController = async (
         );
     }
 
-    const image = await GalleryImage.create({
-        ...parseGalleryInput(req),
-        imageUrl: req.file.path,
-        imagePublicId: req.file.filename,
-        choirId: requireEffectiveChoirObjectId(req),
-        createdBy: requireAuthenticatedUserId(req)
+    const input = parseGalleryInput(req);
+    const choirId = requireEffectiveChoirObjectId(req);
+    const actorUserId = requireAuthenticatedUserId(req);
+    const imageId = new Types.ObjectId();
+    const uploaded = await uploadTenantMedia({
+        file: req.file,
+        choirId,
+        actorUserId,
+        ownerType: 'GALLERY',
+        category: 'gallery'
     });
+    const detectedMediaType = uploaded.asset.mimeType.startsWith('video/')
+        ? 'VIDEO'
+        : 'IMAGE';
+
+    if (input.mediaType !== detectedMediaType) {
+        await discardPendingMedia(
+            uploaded.asset._id,
+            choirId,
+            'Gallery media type mismatch'
+        );
+        throw new AppError(
+            400,
+            'GALLERY_MEDIA_TYPE_MISMATCH',
+            'mediaType does not match the uploaded file'
+        );
+    }
+
+    const image = await GalleryImage.create({
+        _id: imageId,
+        ...input,
+        imageUrl: uploaded.media.url,
+        imagePublicId: uploaded.media.publicId,
+        mediaResourceType: uploaded.media.resourceType,
+        mediaAssetId: uploaded.asset._id,
+        choirId,
+        createdBy: actorUserId
+    }).catch(async (error: Error) => {
+        await discardPendingMedia(
+            uploaded.asset._id,
+            choirId,
+            'Gallery creation failed'
+        );
+        throw error;
+    });
+
+    await attachMediaAsset(
+        uploaded.asset._id,
+        choirId,
+        'GALLERY',
+        image._id
+    );
 
     await registerLog({
         req,
@@ -119,20 +167,44 @@ export const updateGalleryImageController = async (
     req: RequestWithUser & { params: ResourceParams },
     res: Response
 ): Promise<void> => {
-    const image = await findImage(
-        req.params.id,
-        requireEffectiveChoirObjectId(req)
-    );
+    const choirId = requireEffectiveChoirObjectId(req);
+    const actorUserId = requireAuthenticatedUserId(req);
+    const image = await findImage(req.params.id, choirId);
     const before = image.toObject();
     const input = parseGalleryInput(req);
+    const previousAssetId = image.mediaAssetId;
+    const uploaded = req.file
+        ? await uploadTenantMedia({
+            file: req.file,
+            choirId,
+            actorUserId,
+            ownerType: 'GALLERY',
+            category: 'gallery'
+        })
+        : null;
 
-    if (req.file) {
-        await deleteFromCloudinary(
-            image.imagePublicId ?? '',
-            image.mediaType === 'VIDEO' ? 'video' : 'image'
-        );
-        image.imageUrl = req.file.path;
-        image.imagePublicId = req.file.filename;
+    if (uploaded) {
+        const detectedMediaType = uploaded.asset.mimeType.startsWith('video/')
+            ? 'VIDEO'
+            : 'IMAGE';
+
+        if (input.mediaType !== detectedMediaType) {
+            await discardPendingMedia(
+                uploaded.asset._id,
+                choirId,
+                'Gallery media type mismatch'
+            );
+            throw new AppError(
+                400,
+                'GALLERY_MEDIA_TYPE_MISMATCH',
+                'mediaType does not match the uploaded file'
+            );
+        }
+
+        image.imageUrl = uploaded.media.url;
+        image.imagePublicId = uploaded.media.publicId;
+        image.mediaResourceType = uploaded.media.resourceType;
+        image.mediaAssetId = uploaded.asset._id;
     }
 
     image.title = input.title;
@@ -145,8 +217,28 @@ export const updateGalleryImageController = async (
     image.imageGallery = input.imageGallery;
     image.imageLeftMenu = input.imageLeftMenu;
     image.imageRightMenu = input.imageRightMenu;
-    image.updatedBy = requireAuthenticatedUserId(req);
-    await image.save();
+    image.updatedBy = actorUserId;
+
+    await image.save().catch(async (error: Error) => {
+        if (uploaded) {
+            await discardPendingMedia(
+                uploaded.asset._id,
+                choirId,
+                'Gallery update failed'
+            );
+        }
+        throw error;
+    });
+
+    if (uploaded) {
+        await attachMediaAsset(uploaded.asset._id, choirId, 'GALLERY', image._id);
+        await deleteOwnedMedia({
+            assetId: previousAssetId,
+            choirId,
+            ownerType: 'GALLERY',
+            ownerId: image._id
+        });
+    }
 
     await registerLog({
         req,
@@ -194,16 +286,17 @@ export const deleteGalleryImageController = async (
     req: RequestWithUser & { params: ResourceParams },
     res: Response
 ): Promise<void> => {
-    const image = await findImage(
-        req.params.id,
-        requireEffectiveChoirObjectId(req)
-    );
+    const choirId = requireEffectiveChoirObjectId(req);
+    const image = await findImage(req.params.id, choirId);
     const before = image.toObject();
-    await deleteFromCloudinary(
-        image.imagePublicId ?? '',
-        image.mediaType === 'VIDEO' ? 'video' : 'image'
-    );
+    const assetId = image.mediaAssetId;
     await image.deleteOne();
+    await deleteOwnedMedia({
+        assetId,
+        choirId,
+        ownerType: 'GALLERY',
+        ownerId: image._id
+    });
 
     await registerLog({
         req,

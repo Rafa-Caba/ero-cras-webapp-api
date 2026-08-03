@@ -1,16 +1,8 @@
 // src/controllers/choir.controller.ts
 
 import type { Response } from 'express';
+import { Types } from 'mongoose';
 import { AppError } from '../errors/AppError';
-import { registerLog } from '../utils/logger';
-import type { RequestWithUser } from '../types/auth.types';
-import type { ChoirMutationBody } from '../validations/schemas/choir.schemas';
-import {
-    parseChoirIdParam,
-    parseCreateChoirBody,
-    parsePositivePage,
-    parseUpdateChoirBody
-} from '../validations/schemas/choir.schemas';
 import {
     createChoir,
     deactivateChoir,
@@ -18,6 +10,21 @@ import {
     listVisibleChoirs,
     updateChoir
 } from '../services/choir.service';
+import {
+    attachMediaAsset,
+    deleteOwnedMedia,
+    discardPendingMedia,
+    uploadTenantMedia
+} from '../services/media.service';
+import type { RequestWithUser } from '../types/auth.types';
+import { registerLog } from '../utils/logger';
+import type { ChoirMutationBody } from '../validations/schemas/choir.schemas';
+import {
+    parseChoirIdParam,
+    parseCreateChoirBody,
+    parsePositivePage,
+    parseUpdateChoirBody
+} from '../validations/schemas/choir.schemas';
 
 const requireAuthenticatedUser = (req: RequestWithUser) => {
     if (!req.user) {
@@ -29,27 +36,6 @@ const requireAuthenticatedUser = (req: RequestWithUser) => {
     }
 
     return req.user;
-};
-
-const readUploadedLogo = (
-    file?: Express.Multer.File
-): { readonly url: string; readonly publicId: string } | undefined => {
-    if (!file) {
-        return undefined;
-    }
-
-    if (!file.path || !file.filename) {
-        throw new AppError(
-            500,
-            'UPLOAD_RESULT_INVALID',
-            'The uploaded logo did not return the required metadata'
-        );
-    }
-
-    return {
-        url: file.path,
-        publicId: file.filename
-    };
 };
 
 export const listChoirsController = async (
@@ -88,11 +74,49 @@ export const createChoirController = async (
     const currentUser = requireAuthenticatedUser(req);
     const body: ChoirMutationBody | undefined = req.body;
     const input = parseCreateChoirBody(body);
+    const choirObjectId = new Types.ObjectId();
+    const actorUserId = new Types.ObjectId(currentUser.id);
+    const uploaded = req.file
+        ? await uploadTenantMedia({
+            file: req.file,
+            choirId: choirObjectId,
+            actorUserId,
+            ownerType: 'CHOIR',
+            category: 'choir-logo'
+        })
+        : null;
+
     const choir = await createChoir(
+        choirObjectId,
         input,
         currentUser.id,
-        readUploadedLogo(req.file)
-    );
+        uploaded
+            ? {
+                url: uploaded.media.url,
+                publicId: uploaded.media.publicId,
+                resourceType: uploaded.media.resourceType,
+                assetId: uploaded.asset._id
+            }
+            : undefined
+    ).catch(async (error: Error) => {
+        if (uploaded) {
+            await discardPendingMedia(
+                uploaded.asset._id,
+                choirObjectId,
+                'Choir creation failed'
+            );
+        }
+        throw error;
+    });
+
+    if (uploaded) {
+        await attachMediaAsset(
+            uploaded.asset._id,
+            choirObjectId,
+            'CHOIR',
+            choir._id
+        );
+    }
 
     await registerLog({
         req,
@@ -114,12 +138,57 @@ export const updateChoirController = async (
     const body: ChoirMutationBody | undefined = req.body;
     const input = parseUpdateChoirBody(body);
     const choirId = parseChoirIdParam(req.params.id);
+    const existingChoir = await getVisibleChoirById(currentUser, choirId);
+    const choirObjectId = existingChoir._id;
+    const actorUserId = new Types.ObjectId(currentUser.id);
+    const previousAssetId = existingChoir.logoAssetId;
+    const uploaded = req.file
+        ? await uploadTenantMedia({
+            file: req.file,
+            choirId: choirObjectId,
+            actorUserId,
+            ownerType: 'CHOIR',
+            category: 'choir-logo'
+        })
+        : null;
+
     const choir = await updateChoir(
         choirId,
         input,
         currentUser.id,
-        readUploadedLogo(req.file)
-    );
+        uploaded
+            ? {
+                url: uploaded.media.url,
+                publicId: uploaded.media.publicId,
+                resourceType: uploaded.media.resourceType,
+                assetId: uploaded.asset._id
+            }
+            : undefined
+    ).catch(async (error: Error) => {
+        if (uploaded) {
+            await discardPendingMedia(
+                uploaded.asset._id,
+                choirObjectId,
+                'Choir update failed'
+            );
+        }
+        throw error;
+    });
+
+    if (uploaded) {
+        await attachMediaAsset(
+            uploaded.asset._id,
+            choirObjectId,
+            'CHOIR',
+            choir._id
+        );
+        await deleteOwnedMedia({
+            assetId: previousAssetId,
+            choirId: choirObjectId,
+            ownerType: 'CHOIR',
+            ownerId: choir._id
+        });
+    }
 
     await registerLog({
         req,

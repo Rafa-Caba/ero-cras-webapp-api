@@ -2,8 +2,13 @@
 
 import type { Response } from 'express';
 import { AppError } from '../errors/AppError';
-import { deleteFromCloudinary } from '../middlewares/cloudinaryStorage';
 import Settings from '../models/Settings';
+import {
+    attachMediaAsset,
+    deleteOwnedMedia,
+    discardPendingMedia,
+    uploadTenantMedia
+} from '../services/media.service';
 import {
     requireAuthenticatedUserId,
     requireEffectiveChoirObjectId
@@ -12,7 +17,9 @@ import type { RequestWithUser } from '../types/auth.types';
 import { registerLog } from '../utils/logger';
 import { parseSettingsInput } from '../validations/schemas/resource.schemas';
 
-const requireSettings = async (choirId: ReturnType<typeof requireEffectiveChoirObjectId>) => {
+const requireSettings = async (
+    choirId: ReturnType<typeof requireEffectiveChoirObjectId>
+) => {
     const settings = await Settings.findOne({ choirId });
 
     if (!settings) {
@@ -52,34 +59,56 @@ export const updateSettingsController = async (
         });
     }
 
-    if (input.webTitle !== undefined) {
-        settings.webTitle = input.webTitle;
-    }
+    const previousAssetId = settings.logoAssetId;
+    const uploaded = req.file
+        ? await uploadTenantMedia({
+            file: req.file,
+            choirId,
+            actorUserId,
+            ownerType: 'SETTINGS',
+            category: 'settings-logo'
+        })
+        : null;
 
-    if (input.contactPhone !== undefined) {
-        settings.contactPhone = input.contactPhone;
-    }
+    if (input.webTitle !== undefined) settings.webTitle = input.webTitle;
+    if (input.contactPhone !== undefined) settings.contactPhone = input.contactPhone;
+    if (input.socials !== undefined) settings.socials = input.socials;
+    if (input.homeLegends !== undefined) settings.homeLegends = input.homeLegends;
+    if (input.history !== undefined) settings.history = input.history;
 
-    if (input.socials !== undefined) {
-        settings.socials = input.socials;
-    }
-
-    if (input.homeLegends !== undefined) {
-        settings.homeLegends = input.homeLegends;
-    }
-
-    if (input.history !== undefined) {
-        settings.history = input.history;
-    }
-
-    if (req.file) {
-        await deleteFromCloudinary(settings.logoPublicId ?? '');
-        settings.logoUrl = req.file.path;
-        settings.logoPublicId = req.file.filename;
+    if (uploaded) {
+        settings.logoUrl = uploaded.media.url;
+        settings.logoPublicId = uploaded.media.publicId;
+        settings.logoResourceType = uploaded.media.resourceType;
+        settings.logoAssetId = uploaded.asset._id;
     }
 
     settings.updatedBy = actorUserId;
-    await settings.save();
+    await settings.save().catch(async (error: Error) => {
+        if (uploaded) {
+            await discardPendingMedia(
+                uploaded.asset._id,
+                choirId,
+                'Settings update failed'
+            );
+        }
+        throw error;
+    });
+
+    if (uploaded) {
+        await attachMediaAsset(
+            uploaded.asset._id,
+            choirId,
+            'SETTINGS',
+            settings._id
+        );
+        await deleteOwnedMedia({
+            assetId: previousAssetId,
+            choirId,
+            ownerType: 'SETTINGS',
+            ownerId: settings._id
+        });
+    }
 
     await registerLog({
         req,

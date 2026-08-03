@@ -1,9 +1,14 @@
 // src/controllers/user.controller.ts
 
 import type { Response } from 'express';
-import { v2 as cloudinary } from 'cloudinary';
-import type { FilterQuery } from 'mongoose';
+import { Types, type FilterQuery } from 'mongoose';
 import { AppError } from '../errors/AppError';
+import {
+    attachMediaAsset,
+    deleteOwnedMedia,
+    discardPendingMedia,
+    uploadTenantMedia
+} from '../services/media.service';
 import Theme from '../models/Theme';
 import User, { type IUser } from '../models/User';
 import type { RequestWithUser } from '../types/auth.types';
@@ -43,6 +48,29 @@ interface UserParams {
     readonly id: string;
 }
 
+
+const uploadProfileImage = async (
+    file: Express.Multer.File,
+    choirId: Types.ObjectId | null | undefined,
+    actorUserId: Types.ObjectId
+): ReturnType<typeof uploadTenantMedia> => {
+    if (!choirId) {
+        throw new AppError(
+            403,
+            'CHOIR_CONTEXT_REQUIRED',
+            'A tenant profile image requires a choir context'
+        );
+    }
+
+    return uploadTenantMedia({
+        file,
+        choirId,
+        actorUserId,
+        ownerType: 'USER',
+        category: 'users'
+    });
+};
+
 const getCurrentUserDocument = async (req: RequestWithUser) => {
     const currentUserId = requireAuthenticatedUserId(req);
     const user = await User.findById(currentUserId);
@@ -58,31 +86,12 @@ const getCurrentUserDocument = async (req: RequestWithUser) => {
     return user;
 };
 
-const destroyPreviousImage = async (
-    publicId: string | null | undefined
-): Promise<void> => {
-    if (publicId) {
-        await cloudinary.uploader.destroy(publicId);
-    }
-};
-
 export const getOwnProfileController = async (
     req: RequestWithUser,
     res: Response
 ): Promise<void> => {
     const user = await getCurrentUserDocument(req);
     res.json({ user: serializeUser(user) });
-};
-
-export const updateOwnPushTokenController = async (
-    req: RequestWithUser,
-    res: Response
-): Promise<void> => {
-    const user = await getCurrentUserDocument(req);
-    const token = readOptionalString(parseRequestBody(req), 'token');
-    user.pushToken = token || null;
-    await user.save();
-    res.json({ success: true });
 };
 
 export const updateOwnThemeController = async (
@@ -122,14 +131,46 @@ export const updateOwnProfileController = async (
 ): Promise<void> => {
     const user = await getCurrentUserDocument(req);
     const input = parseUpdateProfileInput(req);
+    const previousAssetId = user.imageAssetId;
+    const uploaded = req.file
+        ? await uploadProfileImage(req.file, user.choirId, user._id)
+        : null;
 
-    if (req.file) {
-        await destroyPreviousImage(user.imagePublicId);
-        user.imageUrl = req.file.path;
-        user.imagePublicId = req.file.filename;
+    if (uploaded) {
+        user.imageUrl = uploaded.media.url;
+        user.imagePublicId = uploaded.media.publicId;
+        user.imageResourceType = uploaded.media.resourceType;
+        user.imageAssetId = uploaded.asset._id;
     }
 
-    const updatedUser = await updateOwnProfile(user, input);
+    const updatedUser = await updateOwnProfile(user, input).catch(
+        async (error: Error) => {
+            if (uploaded) {
+                await discardPendingMedia(
+                    uploaded.asset._id,
+                    uploaded.asset.choirId,
+                    'Profile update failed'
+                );
+            }
+            throw error;
+        }
+    );
+
+    if (uploaded) {
+        await attachMediaAsset(
+            uploaded.asset._id,
+            uploaded.asset.choirId,
+            'USER',
+            user._id
+        );
+        await deleteOwnedMedia({
+            assetId: previousAssetId,
+            choirId: uploaded.asset.choirId,
+            ownerType: 'USER',
+            ownerId: user._id
+        });
+    }
+
     res.json({ user: serializeUser(updatedUser) });
 };
 
@@ -240,26 +281,58 @@ export const createUserController = async (
     req: RequestWithUser,
     res: Response
 ): Promise<void> => {
-    const { user, temporaryPassword } = await createTenantUser(
-        parseCreateUserInput(req),
-        requireEffectiveChoirObjectId(req),
-        requireAuthenticatedUserId(req),
-        req.file?.path ?? '',
-        req.file?.filename ?? null
-    );
+    const input = parseCreateUserInput(req);
+    const choirId = requireEffectiveChoirObjectId(req);
+    const actorUserId = requireAuthenticatedUserId(req);
+    const uploaded = req.file
+        ? await uploadTenantMedia({
+            file: req.file,
+            choirId,
+            actorUserId,
+            ownerType: 'USER',
+            category: 'users'
+        })
+        : null;
+    const result = await createTenantUser(
+        input,
+        choirId,
+        actorUserId,
+        uploaded?.media.url ?? '',
+        uploaded?.media.publicId ?? null,
+        uploaded?.media.resourceType ?? null,
+        uploaded?.asset._id ?? null
+    ).catch(async (error: Error) => {
+        if (uploaded) {
+            await discardPendingMedia(
+                uploaded.asset._id,
+                choirId,
+                'User creation failed'
+            );
+        }
+        throw error;
+    });
+
+    if (uploaded) {
+        await attachMediaAsset(
+            uploaded.asset._id,
+            choirId,
+            'USER',
+            result.user._id
+        );
+    }
 
     await registerLog({
         req,
         collection: 'Users',
         action: 'create',
-        referenceId: user.id,
-        changes: { after: serializeUser(user) }
+        referenceId: result.user.id,
+        changes: { after: serializeUser(result.user) }
     });
 
     res.status(201).json({
         message: 'User created successfully',
-        user: serializeUser(user),
-        temporaryPassword
+        user: serializeUser(result.user),
+        temporaryPassword: result.temporaryPassword
     });
 };
 
@@ -267,21 +340,53 @@ export const updateUserController = async (
     req: RequestWithUser & { params: UserParams },
     res: Response
 ): Promise<void> => {
+    const input = parseUpdateUserInput(req);
     const choirId = requireEffectiveChoirObjectId(req);
+    const actorUserId = requireAuthenticatedUserId(req);
     const user = await findTenantUserById(req.params.id, choirId);
     const before = serializeUser(user);
+    const previousAssetId = user.imageAssetId;
+    const uploaded = req.file && choirId
+        ? await uploadTenantMedia({
+            file: req.file,
+            choirId,
+            actorUserId,
+            ownerType: 'USER',
+            category: 'users'
+        })
+        : null;
 
-    if (req.file) {
-        await destroyPreviousImage(user.imagePublicId);
-        user.imageUrl = req.file.path;
-        user.imagePublicId = req.file.filename;
+    if (uploaded) {
+        user.imageUrl = uploaded.media.url;
+        user.imagePublicId = uploaded.media.publicId;
+        user.imageResourceType = uploaded.media.resourceType;
+        user.imageAssetId = uploaded.asset._id;
     }
 
     const result = await updateTenantUser(
         user,
-        parseUpdateUserInput(req),
-        requireAuthenticatedUserId(req)
-    );
+        input,
+        actorUserId
+    ).catch(async (error: Error) => {
+        if (uploaded) {
+            await discardPendingMedia(
+                uploaded.asset._id,
+                choirId,
+                'User update failed'
+            );
+        }
+        throw error;
+    });
+
+    if (uploaded) {
+        await attachMediaAsset(uploaded.asset._id, choirId, 'USER', user._id);
+        await deleteOwnedMedia({
+            assetId: previousAssetId,
+            choirId,
+            ownerType: 'USER',
+            ownerId: user._id
+        });
+    }
 
     await registerLog({
         req,
@@ -383,9 +488,14 @@ export const deleteUserController = async (
     }
 
     const before = serializeUser(user);
-    const imagePublicId = user.imagePublicId;
+    const imageAssetId = user.imageAssetId;
     await deleteTenantUser(user);
-    await destroyPreviousImage(imagePublicId);
+    await deleteOwnedMedia({
+        assetId: imageAssetId,
+        choirId: requireEffectiveChoirObjectId(req),
+        ownerType: 'USER',
+        ownerId: user._id
+    });
 
     await registerLog({
         req,

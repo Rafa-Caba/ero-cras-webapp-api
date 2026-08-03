@@ -90,10 +90,7 @@ export interface ThemeInput {
 export interface ChatMessageInput {
     readonly content: ContentValue;
     readonly type: MessageType;
-    readonly fileUrl: string;
     readonly filename: string;
-    readonly imageUrl: string;
-    readonly audioUrl: string;
-    readonly imagePublicId: string;
+    readonly mediaAssetId?: string | null;
     readonly replyTo?: string | null;
 }

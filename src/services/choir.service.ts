@@ -14,10 +14,14 @@ import {
     ensureDefaultSettingsForChoir
 } from './choirDefaults.service';
 import { disconnectChoirSockets } from './socketRegistry.service';
+import { unregisterChoirPushDevices } from './pushDevice.service';
+import type { MediaResourceType } from '../types/media.types';
 
 export interface UploadedChoirLogo {
     readonly url: string;
     readonly publicId: string;
+    readonly resourceType: MediaResourceType;
+    readonly assetId: Types.ObjectId;
 }
 
 export interface PaginatedChoirs {
@@ -118,6 +122,7 @@ export const getVisibleChoirById = async (
 };
 
 export const createChoir = async (
+    choirId: Types.ObjectId,
     input: CreateChoirInput,
     actorUserId: string,
     uploadedLogo?: UploadedChoirLogo
@@ -125,9 +130,12 @@ export const createChoir = async (
     await ensureUniqueChoirCode(input.code);
 
     const choir = await Choir.create({
+        _id: choirId,
         ...input,
         logoUrl: uploadedLogo?.url ?? '',
         logoPublicId: uploadedLogo?.publicId ?? null,
+        logoResourceType: uploadedLogo?.resourceType ?? null,
+        logoAssetId: uploadedLogo?.assetId ?? null,
         createdBy: new Types.ObjectId(actorUserId)
     });
 
@@ -177,12 +185,18 @@ export const updateChoir = async (
     if (uploadedLogo) {
         choir.logoUrl = uploadedLogo.url;
         choir.logoPublicId = uploadedLogo.publicId;
+        choir.logoResourceType = uploadedLogo.resourceType;
+        choir.logoAssetId = uploadedLogo.assetId;
     }
 
     choir.updatedBy = new Types.ObjectId(actorUserId);
     await choir.save();
 
     if (wasActive && !choir.isActive) {
+        await unregisterChoirPushDevices(
+            choir._id,
+            'Choir deactivated'
+        );
         disconnectChoirSockets(
             choir._id.toString(),
             'CHOIR_DEACTIVATED',
@@ -210,6 +224,11 @@ export const deactivateChoir = async (
     choir.isActive = false;
     choir.updatedBy = new Types.ObjectId(actorUserId);
     await choir.save();
+
+    await unregisterChoirPushDevices(
+        choir._id,
+        'Choir deactivated'
+    );
 
     disconnectChoirSockets(
         choir._id.toString(),

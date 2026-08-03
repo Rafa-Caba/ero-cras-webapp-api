@@ -3,6 +3,7 @@
 import { Document, Schema, Types, model } from 'mongoose';
 import { assertSameChoirRelation, assertSameChoirRelations } from '../services/tenantRelation.service';
 import type { StoredJsonValue } from '../types/content.types';
+import type { MediaResourceType } from '../types/media.types';
 import User from './User';
 
 export interface BlogComment {
@@ -16,6 +17,8 @@ export interface IBlogPost extends Document<Types.ObjectId> {
     content: StoredJsonValue;
     imageUrl?: string;
     imagePublicId?: string | null;
+    imageResourceType?: MediaResourceType | null;
+    imageAssetId?: Types.ObjectId | null;
     isPublic: boolean;
     author: Types.ObjectId;
     choirId: Types.ObjectId;
@@ -34,6 +37,8 @@ const BlogPostSchema = new Schema<IBlogPost>(
         content: { type: Schema.Types.Mixed, required: true },
         imageUrl: { type: String, default: '' },
         imagePublicId: { type: String, default: null },
+        imageResourceType: { type: String, enum: ['image', 'video', 'raw'], default: null },
+        imageAssetId: { type: Schema.Types.ObjectId, ref: 'MediaAsset', default: null },
         isPublic: { type: Boolean, default: false },
         author: { type: Schema.Types.ObjectId, ref: 'User', required: true },
         choirId: {

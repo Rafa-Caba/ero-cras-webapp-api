@@ -1,11 +1,14 @@
 // src/controllers/blog.controller.ts
 
 import type { Response } from 'express';
-import { deleteFromCloudinary } from '../middlewares/cloudinaryStorage';
+import { Types } from 'mongoose';
 import BlogPost, { type IBlogPost } from '../models/BlogPost';
-import type { RequestWithUser } from '../types/auth.types';
-import { registerLog } from '../utils/logger';
-import { notifyCommunity } from '../utils/notificationHelper';
+import {
+    attachMediaAsset,
+    deleteOwnedMedia,
+    discardPendingMedia,
+    uploadTenantMedia
+} from '../services/media.service';
 import {
     buildTenantResourceFilter,
     createTenantResourceNotFoundError,
@@ -13,12 +16,15 @@ import {
     requireEffectiveChoirId,
     requireEffectiveChoirObjectId
 } from '../services/tenantScope.service';
-import { parseBlogInput } from '../validations/schemas/resource.schemas';
+import type { RequestWithUser } from '../types/auth.types';
+import { registerLog } from '../utils/logger';
+import { notifyCommunity } from '../utils/notificationHelper';
 import {
     parseObjectId,
     parseRequestBody,
     readRequiredContent
 } from '../validations/schemas/common.schemas';
+import { parseBlogInput } from '../validations/schemas/resource.schemas';
 
 interface ResourceParams {
     readonly id: string;
@@ -30,12 +36,10 @@ const findPost = async (
 ): Promise<IBlogPost> => {
     return BlogPost
         .findOne(buildTenantResourceFilter(id, choirId))
-        .orFail(() =>
-            createTenantResourceNotFoundError(
-                'BLOG_POST_NOT_FOUND',
-                'Blog post not found'
-            )
-        )
+        .orFail(() => createTenantResourceNotFoundError(
+            'BLOG_POST_NOT_FOUND',
+            'Blog post not found'
+        ))
         .exec();
 };
 
@@ -67,19 +71,47 @@ export const createBlogPostController = async (
     req: RequestWithUser,
     res: Response
 ): Promise<void> => {
-    const actorUserId = requireAuthenticatedUserId(req);
     const input = parseBlogInput(req);
+    const actorUserId = requireAuthenticatedUserId(req);
+    const choirId = requireEffectiveChoirObjectId(req);
+    const postId = new Types.ObjectId();
+    const uploaded = req.file
+        ? await uploadTenantMedia({
+            file: req.file,
+            choirId,
+            actorUserId,
+            ownerType: 'BLOG',
+            category: 'blog'
+        })
+        : null;
+
     const post = await BlogPost.create({
+        _id: postId,
         ...input,
-        imageUrl: req.file?.path ?? '',
-        imagePublicId: req.file?.filename ?? null,
+        imageUrl: uploaded?.media.url ?? '',
+        imagePublicId: uploaded?.media.publicId ?? null,
+        imageResourceType: uploaded?.media.resourceType ?? null,
+        imageAssetId: uploaded?.asset._id ?? null,
         author: actorUserId,
-        choirId: requireEffectiveChoirObjectId(req),
+        choirId,
         likes: 0,
         likesUsers: [],
         comments: [],
         createdBy: actorUserId
+    }).catch(async (error: Error) => {
+        if (uploaded) {
+            await discardPendingMedia(
+                uploaded.asset._id,
+                choirId,
+                'Blog post creation failed'
+            );
+        }
+        throw error;
     });
+
+    if (uploaded) {
+        await attachMediaAsset(uploaded.asset._id, choirId, 'BLOG', post._id);
+    }
 
     await registerLog({
         req,
@@ -106,24 +138,54 @@ export const updateBlogPostController = async (
     req: RequestWithUser & { params: ResourceParams },
     res: Response
 ): Promise<void> => {
-    const post = await findPost(
-        req.params.id,
-        requireEffectiveChoirObjectId(req)
-    );
+    const choirId = requireEffectiveChoirObjectId(req);
+    const actorUserId = requireAuthenticatedUserId(req);
+    const post = await findPost(req.params.id, choirId);
     const before = post.toObject();
     const input = parseBlogInput(req);
-
-    if (req.file) {
-        await deleteFromCloudinary(post.imagePublicId ?? '');
-        post.imageUrl = req.file.path;
-        post.imagePublicId = req.file.filename;
-    }
+    const previousAssetId = post.imageAssetId;
+    const uploaded = req.file
+        ? await uploadTenantMedia({
+            file: req.file,
+            choirId,
+            actorUserId,
+            ownerType: 'BLOG',
+            category: 'blog'
+        })
+        : null;
 
     post.title = input.title;
     post.content = input.content;
     post.isPublic = input.isPublic;
-    post.updatedBy = requireAuthenticatedUserId(req);
-    await post.save();
+    post.updatedBy = actorUserId;
+
+    if (uploaded) {
+        post.imageUrl = uploaded.media.url;
+        post.imagePublicId = uploaded.media.publicId;
+        post.imageResourceType = uploaded.media.resourceType;
+        post.imageAssetId = uploaded.asset._id;
+    }
+
+    await post.save().catch(async (error: Error) => {
+        if (uploaded) {
+            await discardPendingMedia(
+                uploaded.asset._id,
+                choirId,
+                'Blog post update failed'
+            );
+        }
+        throw error;
+    });
+
+    if (uploaded) {
+        await attachMediaAsset(uploaded.asset._id, choirId, 'BLOG', post._id);
+        await deleteOwnedMedia({
+            assetId: previousAssetId,
+            choirId,
+            ownerType: 'BLOG',
+            ownerId: post._id
+        });
+    }
 
     await registerLog({
         req,
@@ -190,13 +252,17 @@ export const deleteBlogPostController = async (
     req: RequestWithUser & { params: ResourceParams },
     res: Response
 ): Promise<void> => {
-    const post = await findPost(
-        req.params.id,
-        requireEffectiveChoirObjectId(req)
-    );
+    const choirId = requireEffectiveChoirObjectId(req);
+    const post = await findPost(req.params.id, choirId);
     const before = post.toObject();
-    await deleteFromCloudinary(post.imagePublicId ?? '');
+    const assetId = post.imageAssetId;
     await post.deleteOne();
+    await deleteOwnedMedia({
+        assetId,
+        choirId,
+        ownerType: 'BLOG',
+        ownerId: post._id
+    });
 
     await registerLog({
         req,

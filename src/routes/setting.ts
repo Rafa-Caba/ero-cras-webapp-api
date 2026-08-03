@@ -6,7 +6,7 @@ import {
     updateSettingsController
 } from '../controllers/settings.controller';
 import { verifyTenantToken } from '../middlewares/auth';
-import { uploadChoirLogo } from '../middlewares/cloudinaryStorage';
+import { uploadSettingsLogo } from '../middlewares/cloudinaryStorage';
 import { requireRole } from '../middlewares/requireRole';
 
 const router = express.Router();
@@ -17,7 +17,7 @@ router.put(
     '/',
     verifyTenantToken,
     requireSettingsManager,
-    uploadChoirLogo.single('file'),
+    uploadSettingsLogo.single('file'),
     updateSettingsController
 );
 
