@@ -6,7 +6,6 @@ import {
     deleteGalleryImageController,
     getGalleryImageController,
     listGalleryController,
-    listPublicGalleryController,
     markGalleryImageController,
     updateGalleryImageController
 } from '../controllers/gallery.controller';
@@ -17,8 +16,6 @@ import { requireRole } from '../middlewares/requireRole';
 const router = express.Router();
 const requireContentEditor = requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR');
 
-router.get('/public', listPublicGalleryController);
-router.get('/public/:choirKey', listPublicGalleryController);
 router.get('/', verifyTenantToken, listGalleryController);
 router.get('/:id', verifyTenantToken, getGalleryImageController);
 router.post(

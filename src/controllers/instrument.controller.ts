@@ -1,6 +1,6 @@
 // src/controllers/instrument.controller.ts
 
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
 import { AppError } from '../errors/AppError';
 import { deleteFromCloudinary } from '../middlewares/cloudinaryStorage';
 import Instrument, { type IInstrument } from '../models/Instrument';
@@ -8,7 +8,6 @@ import Member from '../models/Member';
 import User from '../models/User';
 import type { RequestWithUser } from '../types/auth.types';
 import { registerLog } from '../utils/logger';
-import { resolvePublicChoirId } from '../services/publicChoir.service';
 import {
     buildTenantResourceFilter,
     createTenantResourceNotFoundError,
@@ -20,7 +19,6 @@ import { parseObjectId } from '../validations/schemas/common.schemas';
 
 interface ResourceParams {
     readonly id: string;
-    readonly choirKey?: string;
 }
 
 const findInstrument = async (
@@ -36,17 +34,6 @@ const findInstrument = async (
             )
         )
         .exec();
-};
-
-export const listPublicInstrumentsController = async (
-    req: Request<ResourceParams>,
-    res: Response
-): Promise<void> => {
-    const choirId = await resolvePublicChoirId(req);
-    const instruments = await Instrument.find({ choirId, isActive: true })
-        .select('-iconPublicId -updatedBy')
-        .sort({ order: 1, name: 1 });
-    res.json({ instruments });
 };
 
 export const listInstrumentsController = async (

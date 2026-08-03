@@ -14,6 +14,7 @@ import type {
     UserResponse
 } from '../types/user.types';
 import { revokeAllUserSessions } from './session.service';
+import { disconnectUserSockets } from './socketRegistry.service';
 
 const PASSWORD_SALT_ROUNDS = 12;
 
@@ -185,6 +186,11 @@ export const updateTenantUser = async (
 
     if (roleChanged) {
         await revokeAllUserSessions(user._id);
+        disconnectUserSockets(
+            user._id.toString(),
+            'USER_ROLE_CHANGED',
+            'The user role changed and the active socket session was closed'
+        );
     }
 
     return { user, sessionsRevoked: roleChanged };
@@ -225,6 +231,13 @@ export const setTenantUserActiveStatus = async (
 
     if (statusChanged) {
         await revokeAllUserSessions(user._id);
+        disconnectUserSockets(
+            user._id.toString(),
+            isActive ? 'USER_STATUS_CHANGED' : 'USER_SUSPENDED',
+            isActive
+                ? 'The user status changed and the active socket session was closed'
+                : 'The user was suspended and disconnected from chat'
+        );
     }
 
     return user;
@@ -242,11 +255,21 @@ export const resetTenantUserPassword = async (
     user.updatedBy = actorUserId;
     await user.save();
     await revokeAllUserSessions(user._id);
+    disconnectUserSockets(
+        user._id.toString(),
+        'PASSWORD_RESET',
+        'The password was reset and the active socket session was closed'
+    );
     return temporaryPassword;
 };
 
 export const deleteTenantUser = async (user: IUser): Promise<void> => {
     await assertAdminRemains(user, undefined, false);
     await revokeAllUserSessions(user._id);
+    disconnectUserSockets(
+        user._id.toString(),
+        'USER_DELETED',
+        'The user account was deleted and disconnected from chat'
+    );
     await User.deleteOne({ _id: user._id, choirId: user.choirId });
 };

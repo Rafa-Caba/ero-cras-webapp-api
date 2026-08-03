@@ -1,10 +1,9 @@
 // src/controllers/theme.controller.ts
 
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
 import { AppError } from '../errors/AppError';
 import Theme, { type ITheme } from '../models/Theme';
 import User from '../models/User';
-import { resolvePublicChoirId } from '../services/publicChoir.service';
 import {
     buildTenantResourceFilter,
     createTenantResourceNotFoundError,
@@ -18,7 +17,6 @@ import { parseThemeInput } from '../validations/schemas/resource.schemas';
 
 interface ThemeParams {
     readonly id: string;
-    readonly choirKey?: string;
 }
 
 const findTheme = async (
@@ -34,17 +32,6 @@ const findTheme = async (
             )
         )
         .exec();
-};
-
-export const listPublicThemesController = async (
-    req: Request<ThemeParams>,
-    res: Response
-): Promise<void> => {
-    const choirId = await resolvePublicChoirId(req);
-    const themes = await Theme.find({ choirId })
-        .select('-createdBy -updatedBy')
-        .sort({ name: 1 });
-    res.json(themes);
 };
 
 export const listThemesController = async (

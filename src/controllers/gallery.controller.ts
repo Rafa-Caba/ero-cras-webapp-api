@@ -1,12 +1,11 @@
 // src/controllers/gallery.controller.ts
 
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
 import { AppError } from '../errors/AppError';
 import { deleteFromCloudinary } from '../middlewares/cloudinaryStorage';
 import GalleryImage, { type IGalleryImage } from '../models/GalleryImage';
 import type { RequestWithUser } from '../types/auth.types';
 import { registerLog } from '../utils/logger';
-import { resolvePublicChoirId } from '../services/publicChoir.service';
 import {
     buildTenantResourceFilter,
     createTenantResourceNotFoundError,
@@ -22,7 +21,6 @@ import {
 
 interface ResourceParams {
     readonly id: string;
-    readonly choirKey?: string;
     readonly field?: string;
 }
 
@@ -60,17 +58,6 @@ const findImage = async (
             )
         )
         .exec();
-};
-
-export const listPublicGalleryController = async (
-    req: Request<ResourceParams>,
-    res: Response
-): Promise<void> => {
-    const choirId = await resolvePublicChoirId(req);
-    const images = await GalleryImage.find({ choirId })
-        .select('-imagePublicId -updatedBy')
-        .sort({ createdAt: -1 });
-    res.json(images);
 };
 
 export const listGalleryController = async (

@@ -1,11 +1,10 @@
 // src/controllers/member.controller.ts
 
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
 import { deleteFromCloudinary } from '../middlewares/cloudinaryStorage';
 import Member, { type IMember } from '../models/Member';
 import type { RequestWithUser } from '../types/auth.types';
 import { registerLog } from '../utils/logger';
-import { resolvePublicChoirId } from '../services/publicChoir.service';
 import {
     buildTenantResourceFilter,
     createTenantResourceNotFoundError,
@@ -17,7 +16,6 @@ import { parseObjectId } from '../validations/schemas/common.schemas';
 
 interface ResourceParams {
     readonly id: string;
-    readonly choirKey?: string;
 }
 
 const findMember = async (
@@ -33,18 +31,6 @@ const findMember = async (
             )
         )
         .exec();
-};
-
-export const listPublicMembersController = async (
-    req: Request<ResourceParams>,
-    res: Response
-): Promise<void> => {
-    const choirId = await resolvePublicChoirId(req);
-    const members = await Member.find({ choirId })
-        .select('-imagePublicId -updatedBy')
-        .populate('instrumentId', 'name slug iconKey iconUrl')
-        .sort({ name: 1 });
-    res.json({ members });
 };
 
 export const listMembersController = async (

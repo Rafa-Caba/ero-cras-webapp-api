@@ -15,7 +15,6 @@ import {
     createChoir,
     deactivateChoir,
     getVisibleChoirById,
-    listPublicChoirs,
     listVisibleChoirs,
     updateChoir
 } from '../services/choir.service';
@@ -51,14 +50,6 @@ const readUploadedLogo = (
         url: file.path,
         publicId: file.filename
     };
-};
-
-export const listPublicChoirsController = async (
-    _req: RequestWithUser,
-    res: Response
-): Promise<void> => {
-    const choirs = await listPublicChoirs();
-    res.json(choirs.map((choir) => choir.toJSON()));
 };
 
 export const listChoirsController = async (

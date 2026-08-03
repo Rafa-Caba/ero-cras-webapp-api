@@ -2,7 +2,7 @@
 
 import type { Response } from 'express';
 import type { FilterQuery } from 'mongoose';
-import type { Server as SocketIOServer } from 'socket.io';
+import type { ChoirSocketServer } from '../types/socket.types';
 import { AppError } from '../errors/AppError';
 import {
     streamUpload
@@ -35,8 +35,8 @@ interface UploadChatResponse {
 
 type ReactionLogAction = 'add_reaction' | 'remove_reaction';
 
-const getSocketServer = (req: RequestWithUser): SocketIOServer | undefined => {
-    const io: SocketIOServer | undefined = req.app.get('io');
+const getSocketServer = (req: RequestWithUser): ChoirSocketServer | undefined => {
+    const io: ChoirSocketServer | undefined = req.app.get('io');
     return io;
 };
 

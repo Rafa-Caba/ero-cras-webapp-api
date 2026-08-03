@@ -13,6 +13,7 @@ import {
     createDefaultThemesForChoir,
     ensureDefaultSettingsForChoir
 } from './choirDefaults.service';
+import { disconnectChoirSockets } from './socketRegistry.service';
 
 export interface UploadedChoirLogo {
     readonly url: string;
@@ -63,12 +64,6 @@ const ensureUniqueChoirCode = async (
             'A choir with the same code already exists'
         );
     }
-};
-
-export const listPublicChoirs = async (): Promise<readonly IChoir[]> => {
-    return Choir.find({ isActive: true })
-        .select('name code description logoUrl isActive')
-        .sort({ name: 1 });
 };
 
 export const listVisibleChoirs = async (
@@ -160,6 +155,8 @@ export const updateChoir = async (
         );
     }
 
+    const wasActive = choir.isActive;
+
     if (input.code && input.code !== choir.code) {
         await ensureUniqueChoirCode(input.code, choirId);
         choir.code = input.code;
@@ -185,6 +182,14 @@ export const updateChoir = async (
     choir.updatedBy = new Types.ObjectId(actorUserId);
     await choir.save();
 
+    if (wasActive && !choir.isActive) {
+        disconnectChoirSockets(
+            choir._id.toString(),
+            'CHOIR_DEACTIVATED',
+            'The choir was deactivated and all active socket sessions were closed'
+        );
+    }
+
     return choir;
 };
 
@@ -205,6 +210,12 @@ export const deactivateChoir = async (
     choir.isActive = false;
     choir.updatedBy = new Types.ObjectId(actorUserId);
     await choir.save();
+
+    disconnectChoirSockets(
+        choir._id.toString(),
+        'CHOIR_DEACTIVATED',
+        'The choir was deactivated and all active socket sessions were closed'
+    );
 
     return choir;
 };

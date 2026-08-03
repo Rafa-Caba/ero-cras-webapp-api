@@ -25,6 +25,7 @@ import {
     hashRefreshToken,
     verifyRefreshToken
 } from './token.service';
+import { disconnectUserSockets } from './socketRegistry.service';
 
 const BOOTSTRAP_PLATFORM_ACCOUNT_KEY = 'bootstrap-super-admin';
 const PASSWORD_HASH_ROUNDS = 12;
@@ -410,6 +411,12 @@ export const changeAuthenticatedPassword = async (
     await RefreshToken.updateMany(
         { userId: user._id, revokedAt: null },
         { $set: { revokedAt: new Date() } }
+    );
+
+    disconnectUserSockets(
+        user._id.toString(),
+        'PASSWORD_CHANGED',
+        'The password changed and the previous socket session was closed'
     );
 
     const choir = await loadSessionChoir(user);

@@ -6,7 +6,6 @@ import {
     deleteAnnouncementController,
     getAnnouncementController,
     listAnnouncementsController,
-    listPublicAnnouncementsController,
     updateAnnouncementController
 } from '../controllers/announcement.controller';
 import { verifyTenantToken } from '../middlewares/auth';
@@ -16,8 +15,6 @@ import { requireRole } from '../middlewares/requireRole';
 const router = express.Router();
 const requireContentEditor = requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR');
 
-router.get('/public', listPublicAnnouncementsController);
-router.get('/public/:choirKey', listPublicAnnouncementsController);
 router.get('/', verifyTenantToken, listAnnouncementsController);
 router.get('/admin', verifyTenantToken, listAnnouncementsController);
 router.get('/:id', verifyTenantToken, getAnnouncementController);

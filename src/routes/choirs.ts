@@ -6,7 +6,6 @@ import {
     deactivateChoirController,
     getChoirController,
     listChoirsController,
-    listPublicChoirsController,
     updateChoirController
 } from '../controllers/choir.controller';
 import { verifyPlatformToken } from '../middlewares/auth';
@@ -15,7 +14,6 @@ import { uploadChoirLogo } from '../middlewares/cloudinaryStorage';
 
 const router = Router();
 
-router.get('/public', listPublicChoirsController);
 router.get('/', verifyPlatformToken, listChoirsController);
 router.get('/:id', verifyPlatformToken, getChoirController);
 router.post(

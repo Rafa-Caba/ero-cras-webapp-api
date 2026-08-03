@@ -1,12 +1,11 @@
 // src/controllers/blog.controller.ts
 
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
 import { deleteFromCloudinary } from '../middlewares/cloudinaryStorage';
 import BlogPost, { type IBlogPost } from '../models/BlogPost';
 import type { RequestWithUser } from '../types/auth.types';
 import { registerLog } from '../utils/logger';
 import { notifyCommunity } from '../utils/notificationHelper';
-import { resolvePublicChoirId } from '../services/publicChoir.service';
 import {
     buildTenantResourceFilter,
     createTenantResourceNotFoundError,
@@ -23,7 +22,6 @@ import {
 
 interface ResourceParams {
     readonly id: string;
-    readonly choirKey?: string;
 }
 
 const findPost = async (
@@ -39,18 +37,6 @@ const findPost = async (
             )
         )
         .exec();
-};
-
-export const listPublicBlogController = async (
-    req: Request<ResourceParams>,
-    res: Response
-): Promise<void> => {
-    const choirId = await resolvePublicChoirId(req);
-    const posts = await BlogPost.find({ choirId, isPublic: true })
-        .select('-imagePublicId -updatedBy')
-        .populate('author', 'name username imageUrl')
-        .sort({ createdAt: -1 });
-    res.json(posts);
 };
 
 export const listBlogController = async (

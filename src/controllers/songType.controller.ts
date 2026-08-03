@@ -1,10 +1,9 @@
 // src/controllers/songType.controller.ts
 
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
 import { AppError } from '../errors/AppError';
 import Song from '../models/Song';
 import SongType, { type ISongType } from '../models/SongType';
-import { resolvePublicChoirId } from '../services/publicChoir.service';
 import {
     buildTenantResourceFilter,
     createTenantResourceNotFoundError,
@@ -18,7 +17,6 @@ import { parseSongTypeInput } from '../validations/schemas/resource.schemas';
 
 interface SongTypeParams {
     readonly id: string;
-    readonly choirKey?: string;
 }
 
 const findSongType = async (
@@ -34,17 +32,6 @@ const findSongType = async (
             )
         )
         .exec();
-};
-
-export const listPublicSongTypesController = async (
-    req: Request<SongTypeParams>,
-    res: Response
-): Promise<void> => {
-    const choirId = await resolvePublicChoirId(req);
-    const songTypes = await SongType.find({ choirId })
-        .select('-createdBy -updatedBy')
-        .sort({ order: 1, name: 1 });
-    res.json(songTypes);
 };
 
 export const listSongTypesController = async (

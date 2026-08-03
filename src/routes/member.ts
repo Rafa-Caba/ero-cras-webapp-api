@@ -6,7 +6,6 @@ import {
     deleteMemberController,
     getMemberController,
     listMembersController,
-    listPublicMembersController,
     updateMemberController
 } from '../controllers/member.controller';
 import { verifyTenantToken } from '../middlewares/auth';
@@ -16,8 +15,6 @@ import { requireRole } from '../middlewares/requireRole';
 const router = express.Router();
 const requireMemberManager = requireRole('SUPER_ADMIN', 'ADMIN');
 
-router.get('/public', listPublicMembersController);
-router.get('/public/:choirKey', listPublicMembersController);
 router.get('/', verifyTenantToken, listMembersController);
 router.get('/:id', verifyTenantToken, getMemberController);
 router.post(

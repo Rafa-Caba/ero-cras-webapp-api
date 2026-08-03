@@ -6,7 +6,6 @@ import {
     deleteInstrumentController,
     getInstrumentController,
     listInstrumentsController,
-    listPublicInstrumentsController,
     updateInstrumentController
 } from '../controllers/instrument.controller';
 import { verifyTenantToken } from '../middlewares/auth';
@@ -16,8 +15,6 @@ import { requireRole } from '../middlewares/requireRole';
 const router = express.Router();
 const requireInstrumentManager = requireRole('SUPER_ADMIN', 'ADMIN');
 
-router.get('/public', listPublicInstrumentsController);
-router.get('/public/:choirKey', listPublicInstrumentsController);
 router.get('/', verifyTenantToken, listInstrumentsController);
 router.get('/:id', verifyTenantToken, getInstrumentController);
 router.post(

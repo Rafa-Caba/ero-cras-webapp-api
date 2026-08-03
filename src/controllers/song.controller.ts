@@ -1,8 +1,7 @@
 // src/controllers/song.controller.ts
 
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
 import Song, { type ISong } from '../models/Song';
-import { resolvePublicChoirId } from '../services/publicChoir.service';
 import {
     buildTenantResourceFilter,
     createTenantResourceNotFoundError,
@@ -16,7 +15,6 @@ import { parseSongInput } from '../validations/schemas/resource.schemas';
 
 interface SongParams {
     readonly id: string;
-    readonly choirKey?: string;
 }
 
 const findSong = async (
@@ -41,19 +39,6 @@ const populateSong = async (song: ISong): Promise<ISong> => {
         { path: 'updatedBy', select: 'name username' }
     ]);
     return song;
-};
-
-export const listPublicSongsController = async (
-    req: Request<SongParams>,
-    res: Response
-): Promise<void> => {
-    const choirId = await resolvePublicChoirId(req);
-    const songs = await Song.find({ choirId })
-        .select('-updatedBy')
-        .populate('songTypeId', 'name order')
-        .populate('createdBy', 'name username')
-        .sort({ createdAt: -1 });
-    res.json(songs);
 };
 
 export const listSongsController = async (

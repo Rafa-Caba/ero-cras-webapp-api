@@ -5,7 +5,6 @@ import {
     createSongController,
     deleteSongController,
     getSongController,
-    listPublicSongsController,
     listSongsController,
     updateSongController
 } from '../controllers/song.controller';
@@ -16,8 +15,6 @@ import { requireRole } from '../middlewares/requireRole';
 const router = express.Router();
 const requireContentEditor = requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR');
 
-router.get('/public', listPublicSongsController);
-router.get('/public/:choirKey', listPublicSongsController);
 router.get('/', verifyTenantToken, listSongsController);
 router.get('/:id', verifyTenantToken, getSongController);
 router.post(

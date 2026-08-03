@@ -4,6 +4,12 @@ import express, { Application } from 'express';
 import cors from 'cors';
 import http from 'http';
 import { Server as SocketIOServer } from 'socket.io';
+import type {
+    ChoirSocketData,
+    ClientToServerEvents,
+    InterServerEvents,
+    ServerToClientEvents
+} from './types/socket.types';
 import { connectDatabase } from './config/database';
 import { env } from './config/env';
 import { isOriginAllowed } from './config/cors';
@@ -24,6 +30,7 @@ import logRoutes from './routes/log';
 import themeRoutes from './routes/theme';
 import chatRoutes from './routes/chat';
 import instrumentsRouter from './routes/instruments';
+import publicRoutes from './routes/public';
 
 export const app: Application = express();
 
@@ -42,6 +49,7 @@ app.use(cors({
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
+app.use('/api/public/:choirCode', publicRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/choirs', choirsRouter);
 app.use('/api/users', userRoutes);
@@ -64,7 +72,12 @@ const startServer = async (): Promise<void> => {
     await connectDatabase();
 
     const httpServer = http.createServer(app);
-    const io = new SocketIOServer(httpServer, {
+    const io = new SocketIOServer<
+        ClientToServerEvents,
+        ServerToClientEvents,
+        InterServerEvents,
+        ChoirSocketData
+    >(httpServer, {
         cors: {
             origin: (origin, callback) => {
                 if (isOriginAllowed(origin)) {

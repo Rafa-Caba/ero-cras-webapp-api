@@ -2,7 +2,6 @@
 
 import express from 'express';
 import {
-    getPublicSettingsController,
     getSettingsController,
     updateSettingsController
 } from '../controllers/settings.controller';
@@ -13,8 +12,6 @@ import { requireRole } from '../middlewares/requireRole';
 const router = express.Router();
 const requireSettingsManager = requireRole('SUPER_ADMIN', 'ADMIN');
 
-router.get('/public', getPublicSettingsController);
-router.get('/public/:choirKey', getPublicSettingsController);
 router.get('/', verifyTenantToken, getSettingsController);
 router.put(
     '/',

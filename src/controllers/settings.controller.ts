@@ -1,12 +1,9 @@
 // src/controllers/settings.controller.ts
 
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
 import { AppError } from '../errors/AppError';
-import {
-    deleteFromCloudinary
-} from '../middlewares/cloudinaryStorage';
+import { deleteFromCloudinary } from '../middlewares/cloudinaryStorage';
 import Settings from '../models/Settings';
-import { resolvePublicChoirId } from '../services/publicChoir.service';
 import {
     requireAuthenticatedUserId,
     requireEffectiveChoirObjectId
@@ -14,10 +11,6 @@ import {
 import type { RequestWithUser } from '../types/auth.types';
 import { registerLog } from '../utils/logger';
 import { parseSettingsInput } from '../validations/schemas/resource.schemas';
-
-interface PublicSettingsParams {
-    readonly choirKey?: string;
-}
 
 const requireSettings = async (choirId: ReturnType<typeof requireEffectiveChoirObjectId>) => {
     const settings = await Settings.findOne({ choirId });
@@ -27,21 +20,6 @@ const requireSettings = async (choirId: ReturnType<typeof requireEffectiveChoirO
     }
 
     return settings;
-};
-
-export const getPublicSettingsController = async (
-    req: Request<PublicSettingsParams>,
-    res: Response
-): Promise<void> => {
-    const choirId = await resolvePublicChoirId(req);
-    const settings = await Settings.findOne({ choirId })
-        .select('-logoPublicId -createdBy -updatedBy');
-
-    if (!settings) {
-        throw new AppError(404, 'SETTINGS_NOT_FOUND', 'Settings not found');
-    }
-
-    res.json(settings);
 };
 
 export const getSettingsController = async (

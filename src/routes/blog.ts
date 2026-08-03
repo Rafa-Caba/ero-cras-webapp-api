@@ -7,7 +7,6 @@ import {
     deleteBlogPostController,
     getBlogPostController,
     listBlogController,
-    listPublicBlogController,
     toggleBlogLikeController,
     updateBlogPostController
 } from '../controllers/blog.controller';
@@ -18,8 +17,6 @@ import { requireRole } from '../middlewares/requireRole';
 const router = express.Router();
 const requireContentEditor = requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR');
 
-router.get('/public', listPublicBlogController);
-router.get('/public/:choirKey', listPublicBlogController);
 router.get('/', verifyTenantToken, listBlogController);
 router.get('/:id', verifyTenantToken, getBlogPostController);
 router.post(

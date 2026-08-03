@@ -1,12 +1,11 @@
 // src/controllers/announcement.controller.ts
 
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
 import { deleteFromCloudinary } from '../middlewares/cloudinaryStorage';
 import Announcement, { type IAnnouncement } from '../models/Announcement';
 import type { RequestWithUser } from '../types/auth.types';
 import { registerLog } from '../utils/logger';
 import { notifyCommunity } from '../utils/notificationHelper';
-import { resolvePublicChoirId } from '../services/publicChoir.service';
 import {
     buildTenantResourceFilter,
     createTenantResourceNotFoundError,
@@ -19,7 +18,6 @@ import { parseObjectId } from '../validations/schemas/common.schemas';
 
 interface ResourceParams {
     readonly id: string;
-    readonly choirKey?: string;
 }
 
 const findAnnouncement = async (
@@ -35,17 +33,6 @@ const findAnnouncement = async (
             )
         )
         .exec();
-};
-
-export const listPublicAnnouncementsController = async (
-    req: Request<ResourceParams>,
-    res: Response
-): Promise<void> => {
-    const choirId = await resolvePublicChoirId(req);
-    const announcements = await Announcement.find({ choirId, isPublic: true })
-        .select('-imagePublicId -updatedBy')
-        .sort({ createdAt: -1 });
-    res.json(announcements);
 };
 
 export const listAnnouncementsController = async (
