@@ -4,6 +4,7 @@ import type { Response } from 'express';
 import { AppError } from '../errors/AppError';
 import Song from '../models/Song';
 import SongType, { type ISongType } from '../models/SongType';
+import { sendCacheableJson } from '../services/httpCache.service';
 import {
     buildTenantResourceFilter,
     createTenantResourceNotFoundError,
@@ -43,7 +44,8 @@ export const listSongTypesController = async (
     })
         .populate('parentId', 'name order')
         .sort({ order: 1, name: 1 });
-    res.json(songTypes);
+
+    sendCacheableJson(req, res, songTypes);
 };
 
 export const getSongTypeController = async (

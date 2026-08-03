@@ -3,6 +3,7 @@
 import type { Response } from 'express';
 import type { FilterQuery } from 'mongoose';
 import { AppError } from '../errors/AppError';
+import { buildUpdatedSinceFilter, sendCacheableJson } from '../services/httpCache.service';
 import ChatMessage, { type IChatMessage, type MessageType } from '../models/ChatMessage';
 import {
     attachMediaAsset,
@@ -25,6 +26,7 @@ import {
     readRequiredString
 } from '../validations/schemas/common.schemas';
 import { parseChatMessageInput } from '../validations/schemas/resource.schemas';
+import { parseSyncQuery } from '../validations/schemas/sync.schemas';
 
 interface ChatMessageParams {
     readonly messageId: string;
@@ -129,6 +131,8 @@ export const listChatHistoryController = async (
     res: Response
 ): Promise<void> => {
     const choirId = requireEffectiveChoirObjectId(req);
+    const syncStartedAt = new Date();
+    const { updatedSince } = parseSyncQuery(req);
     const limitValue = typeof req.query.limit === 'string'
         ? Number(req.query.limit)
         : 50;
@@ -138,7 +142,10 @@ export const listChatHistoryController = async (
     const beforeValue = typeof req.query.before === 'string'
         ? req.query.before
         : undefined;
-    const filters: FilterQuery<IChatMessage> = { choirId };
+    const filters: FilterQuery<IChatMessage> = {
+        choirId,
+        ...buildUpdatedSinceFilter(updatedSince)
+    };
 
     if (beforeValue) {
         const before = new Date(beforeValue);
@@ -164,7 +171,7 @@ export const listChatHistoryController = async (
             populate: { path: 'author', select: 'name username imageUrl' }
         });
 
-    res.json(messages.reverse());
+    sendCacheableJson(req, res, messages.reverse(), syncStartedAt);
 };
 
 export const createChatMessageController = async (

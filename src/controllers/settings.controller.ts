@@ -2,6 +2,7 @@
 
 import type { Response } from 'express';
 import { AppError } from '../errors/AppError';
+import { sendCacheableJson } from '../services/httpCache.service';
 import Settings from '../models/Settings';
 import {
     attachMediaAsset,
@@ -34,11 +35,13 @@ export const getSettingsController = async (
     res: Response
 ): Promise<void> => {
     const settings = await requireSettings(requireEffectiveChoirObjectId(req));
+
+
     await settings.populate([
         { path: 'createdBy', select: 'name username' },
         { path: 'updatedBy', select: 'name username' }
     ]);
-    res.json(settings);
+    sendCacheableJson(req, res, settings);
 };
 
 export const updateSettingsController = async (

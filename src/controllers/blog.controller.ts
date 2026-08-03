@@ -9,6 +9,7 @@ import {
     discardPendingMedia,
     uploadTenantMedia
 } from '../services/media.service';
+import { sendCacheableJson } from '../services/httpCache.service';
 import {
     buildTenantResourceFilter,
     createTenantResourceNotFoundError,
@@ -52,7 +53,8 @@ export const listBlogController = async (
     })
         .populate('author', 'name username imageUrl')
         .sort({ createdAt: -1 });
-    res.json(posts);
+
+    sendCacheableJson(req, res, posts);
 };
 
 export const getBlogPostController = async (

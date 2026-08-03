@@ -12,6 +12,7 @@ import {
     discardPendingMedia,
     uploadTenantMedia
 } from '../services/media.service';
+import { sendCacheableJson } from '../services/httpCache.service';
 import {
     buildTenantResourceFilter,
     createTenantResourceNotFoundError,
@@ -47,7 +48,8 @@ export const listInstrumentsController = async (
     const instruments = await Instrument.find({
         choirId: requireEffectiveChoirObjectId(req)
     }).sort({ order: 1, name: 1 });
-    res.json(instruments);
+
+    sendCacheableJson(req, res, instruments);
 };
 
 export const getInstrumentController = async (

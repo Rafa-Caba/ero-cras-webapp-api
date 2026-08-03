@@ -9,6 +9,7 @@ import {
     discardPendingMedia,
     uploadTenantMedia
 } from '../services/media.service';
+import { sendCacheableJson } from '../services/httpCache.service';
 import {
     buildTenantResourceFilter,
     createTenantResourceNotFoundError,
@@ -57,7 +58,8 @@ export const listSongsController = async (
         .populate('createdBy', 'name username')
         .populate('updatedBy', 'name username')
         .sort({ createdAt: -1 });
-    res.json(songs);
+
+    sendCacheableJson(req, res, songs);
 };
 
 export const getSongController = async (

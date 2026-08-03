@@ -9,6 +9,7 @@ import {
     discardPendingMedia,
     uploadTenantMedia
 } from '../services/media.service';
+import { sendCacheableJson } from '../services/httpCache.service';
 import {
     buildTenantResourceFilter,
     createTenantResourceNotFoundError,
@@ -49,7 +50,8 @@ export const listAnnouncementsController = async (
         .populate('createdBy', 'name username')
         .populate('updatedBy', 'name username')
         .sort({ createdAt: -1 });
-    res.json(announcements);
+
+    sendCacheableJson(req, res, announcements);
 };
 
 export const getAnnouncementController = async (

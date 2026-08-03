@@ -10,6 +10,7 @@ import {
     discardPendingMedia,
     uploadTenantMedia
 } from '../services/media.service';
+import { sendCacheableJson } from '../services/httpCache.service';
 import {
     buildTenantResourceFilter,
     createTenantResourceNotFoundError,
@@ -74,7 +75,8 @@ export const listGalleryController = async (
         .populate('createdBy', 'name username')
         .populate('updatedBy', 'name username')
         .sort({ createdAt: -1 });
-    res.json(images);
+
+    sendCacheableJson(req, res, images);
 };
 
 export const getGalleryImageController = async (

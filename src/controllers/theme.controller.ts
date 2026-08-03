@@ -4,6 +4,7 @@ import type { Response } from 'express';
 import { AppError } from '../errors/AppError';
 import Theme, { type ITheme } from '../models/Theme';
 import User from '../models/User';
+import { sendCacheableJson } from '../services/httpCache.service';
 import {
     buildTenantResourceFilter,
     createTenantResourceNotFoundError,
@@ -41,7 +42,8 @@ export const listThemesController = async (
     const themes = await Theme.find({
         choirId: requireEffectiveChoirObjectId(req)
     }).sort({ name: 1 });
-    res.json(themes);
+
+    sendCacheableJson(req, res, themes);
 };
 
 export const getThemeController = async (

@@ -64,6 +64,7 @@ export interface SessionTokenPair {
 export interface AuthSessionResponse {
     readonly accessToken: string;
     readonly refreshToken: string;
+    readonly sessionId: string;
     readonly user: AuthenticatedUser;
     readonly choir: AuthenticatedChoir | null;
     readonly requiresPasswordChange: boolean;

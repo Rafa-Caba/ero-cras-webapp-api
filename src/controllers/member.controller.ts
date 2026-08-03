@@ -9,6 +9,7 @@ import {
     discardPendingMedia,
     uploadTenantMedia
 } from '../services/media.service';
+import { sendCacheableJson } from '../services/httpCache.service';
 import {
     buildTenantResourceFilter,
     createTenantResourceNotFoundError,
@@ -46,7 +47,8 @@ export const listMembersController = async (
     })
         .populate('instrumentId', 'name slug iconKey iconUrl')
         .sort({ name: 1 });
-    res.json(members);
+
+    sendCacheableJson(req, res, members);
 };
 
 export const getMemberController = async (

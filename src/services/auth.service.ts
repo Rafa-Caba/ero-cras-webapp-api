@@ -101,6 +101,7 @@ const createSessionResponse = async (
     return {
         accessToken: tokenPair.accessToken,
         refreshToken: tokenPair.refreshToken,
+        sessionId: tokenPair.refreshTokenId,
         user: serializeAuthenticatedUser(user),
         choir: choir ? serializeChoir(choir) : null,
         requiresPasswordChange: user.mustChangePassword
