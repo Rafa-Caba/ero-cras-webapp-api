@@ -39,3 +39,6 @@ seed-output/
 
 # Local database backups
 backups/
+
+# Local QA credentials and generated state
+/scripts/qa/.local/

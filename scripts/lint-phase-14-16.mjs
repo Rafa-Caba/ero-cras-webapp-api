@@ -11,6 +11,7 @@ const targets = [
     'src/models/Log.ts',
     'src/routes/log.ts',
     'src/server.ts',
+    'src/services/tenantRelation.service.ts',
     'src/types/audit.types.ts',
     'src/utils/logger.ts'
 ];

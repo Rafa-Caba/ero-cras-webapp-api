@@ -1,10 +1,19 @@
 // src/services/tenantRelation.service.ts
 
 import type { Model, Types } from 'mongoose';
+import { AppError } from '../errors/AppError';
 
 interface TenantRelationDocument {
     readonly choirId?: Types.ObjectId | null;
 }
+
+const createTenantRelationError = (fieldName: string): AppError => {
+    return new AppError(
+        404,
+        'TENANT_RELATION_NOT_FOUND',
+        `${fieldName} must reference an existing resource from the same choir`
+    );
+};
 
 export const assertSameChoirRelation = async <
     TDocument extends TenantRelationDocument
@@ -24,12 +33,12 @@ export const assertSameChoirRelation = async <
         .lean()
         .exec();
 
-    if (!relatedDocument || !relatedDocument.choirId) {
-        throw new Error(`${fieldName} does not reference an existing tenant resource`);
-    }
-
-    if (!relatedDocument.choirId.equals(choirId)) {
-        throw new Error(`${fieldName} must reference a resource from the same choir`);
+    if (
+        !relatedDocument ||
+        !relatedDocument.choirId ||
+        !relatedDocument.choirId.equals(choirId)
+    ) {
+        throw createTenantRelationError(fieldName);
     }
 };
 
