@@ -9,11 +9,18 @@ const targets = [
     'src/controllers/log.controller.ts',
     'src/controllers/user.controller.ts',
     'src/models/Log.ts',
+    'src/models/User.ts',
     'src/routes/log.ts',
     'src/server.ts',
+    'src/services/auth.service.ts',
+    'src/services/choir.service.ts',
+    'src/services/user.service.ts',
     'src/services/tenantRelation.service.ts',
     'src/types/audit.types.ts',
-    'src/utils/logger.ts'
+    'src/types/auth.types.ts',
+    'src/types/user.types.ts',
+    'src/utils/logger.ts',
+    'src/validations/schemas/user.schemas.ts'
 ];
 
 const prohibitedPatterns = [

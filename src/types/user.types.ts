@@ -35,6 +35,7 @@ export interface UpdateProfileInput {
     readonly instrumentLabel?: string;
     readonly voice?: boolean;
     readonly bio?: string;
+    readonly preferredChoirId?: string | null;
 }
 
 export interface UserResponse {
@@ -50,6 +51,7 @@ export interface UserResponse {
     readonly bio: string;
     readonly themeId: string | null;
     readonly choirId: string | null;
+    readonly preferredChoirId: string | null;
     readonly isActive: boolean;
     readonly mustChangePassword: boolean;
     readonly lastAccess: Date | null;

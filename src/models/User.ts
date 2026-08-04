@@ -26,6 +26,7 @@ export interface IUser extends Document<Types.ObjectId> {
     bio?: string;
     themeId?: Types.ObjectId | null;
     choirId?: Types.ObjectId | null;
+    preferredChoirId?: Types.ObjectId | null;
     isActive: boolean;
     mustChangePassword: boolean;
     passwordChangedAt?: Date | null;
@@ -86,6 +87,11 @@ const UserSchema = new Schema<IUser>(
                 return isTenantRole(this.role);
             }
         },
+        preferredChoirId: {
+            type: Schema.Types.ObjectId,
+            ref: 'Choir',
+            default: null
+        },
         isActive: { type: Boolean, default: true },
         mustChangePassword: { type: Boolean, default: false },
         passwordChangedAt: { type: Date, default: null },
@@ -135,6 +141,13 @@ UserSchema.pre('validate', async function normalizeAndValidateUser(this: IUser):
     if (!this.choirId) {
         this.invalidate('choirId', 'Tenant users must belong to a choir');
         return;
+    }
+
+    if (this.preferredChoirId) {
+        this.invalidate(
+            'preferredChoirId',
+            'Tenant users cannot define a preferred platform choir'
+        );
     }
 
     if (this.platformAccountKey) {
@@ -195,6 +208,7 @@ UserSchema.index(
     { unique: true, sparse: true, name: 'platform_account_key_unique' }
 );
 UserSchema.index({ choirId: 1, role: 1, isActive: 1 });
+UserSchema.index({ role: 1, preferredChoirId: 1 });
 UserSchema.index({ role: 1, isActive: 1 });
 
 const User = model<IUser>('User', UserSchema);

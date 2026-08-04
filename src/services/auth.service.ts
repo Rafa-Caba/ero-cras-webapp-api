@@ -41,6 +41,9 @@ export const serializeAuthenticatedUser = (
         email: user.email,
         role: user.role,
         choirId: user.choirId ? user.choirId.toString() : null,
+        preferredChoirId: user.preferredChoirId
+            ? user.preferredChoirId.toString()
+            : null,
         isActive: user.isActive,
         mustChangePassword: user.mustChangePassword,
         sessionVersion: user.sessionVersion

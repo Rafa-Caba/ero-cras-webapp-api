@@ -13,6 +13,9 @@ const logRoutes = read('src/routes/log.ts');
 const choirController = read('src/controllers/choir.controller.ts');
 const userController = read('src/controllers/user.controller.ts');
 const server = read('src/server.ts');
+const userModel = read('src/models/User.ts');
+const userService = read('src/services/user.service.ts');
+const choirService = read('src/services/choir.service.ts');
 
 assert.match(logModel, /actorUserId/u);
 assert.match(logModel, /actorRole/u);
@@ -31,5 +34,10 @@ assert.match(choirController, /operation: 'choir.deactivate'/u);
 assert.match(userController, /'user.role_change'/u);
 assert.match(userController, /operation: 'user.password_reset'/u);
 assert.match(userController, /operation: 'admin.users_access'/u);
+assert.match(userController, /operation: 'platform.profile_update'/u);
+assert.match(userModel, /preferredChoirId/u);
+assert.match(userService, /PREFERRED_CHOIR_NOT_ALLOWED/u);
+assert.match(userService, /PREFERRED_CHOIR_NOT_FOUND/u);
+assert.match(choirService, /preferredChoirId: choir\._id/u);
 
 console.log('Phase 14-16 API contract tests passed.');

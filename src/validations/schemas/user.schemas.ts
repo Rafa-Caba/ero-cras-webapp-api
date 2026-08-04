@@ -188,6 +188,7 @@ export const parseUpdateUserInput = (req: Request): UpdateUserInput => {
 export const parseUpdateProfileInput = (req: Request): UpdateProfileInput => {
     const body = parseRequestBody(req);
     const instrumentId = readOptionalObjectId(body, 'instrumentId');
+    const preferredChoirId = readOptionalObjectId(body, 'preferredChoirId');
 
     return {
         name: readOptionalValidatedString(req, 'name', validateName),
@@ -200,7 +201,10 @@ export const parseUpdateProfileInput = (req: Request): UpdateProfileInput => {
             readOptionalString(body, 'instrumentLabel') ??
             readOptionalString(body, 'instrument'),
         voice: readOptionalBoolean(body, 'voice'),
-        bio: readOptionalString(body, 'bio')
+        bio: readOptionalString(body, 'bio'),
+        preferredChoirId: preferredChoirId === undefined
+            ? undefined
+            : preferredChoirId?.toString() ?? null
     };
 };
 

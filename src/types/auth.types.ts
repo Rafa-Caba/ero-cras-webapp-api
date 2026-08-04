@@ -25,6 +25,7 @@ export interface AuthenticatedUser {
     readonly email: string;
     readonly role: UserRole;
     readonly choirId: string | null;
+    readonly preferredChoirId: string | null;
     readonly isActive: boolean;
     readonly mustChangePassword: boolean;
     readonly sessionVersion: number;

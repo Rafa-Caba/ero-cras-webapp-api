@@ -5,6 +5,7 @@ import { randomBytes } from 'crypto';
 import { Types } from 'mongoose';
 import { AppError } from '../errors/AppError';
 import { parseObjectId } from '../validations/schemas/common.schemas';
+import Choir from '../models/Choir';
 import User, { type IUser } from '../models/User';
 import type {
     CreateUserInput,
@@ -32,6 +33,7 @@ export const USER_SAFE_PROJECTION = [
     'bio',
     'themeId',
     'choirId',
+    'preferredChoirId',
     'isActive',
     'mustChangePassword',
     'lastAccess',
@@ -52,6 +54,7 @@ export const serializeUser = (user: IUser): UserResponse => ({
     bio: user.bio ?? '',
     themeId: user.themeId?.toString() ?? null,
     choirId: user.choirId?.toString() ?? null,
+    preferredChoirId: user.preferredChoirId?.toString() ?? null,
     isActive: user.isActive,
     mustChangePassword: user.mustChangePassword,
     lastAccess: user.lastAccess ?? null,
@@ -210,6 +213,27 @@ export const updateOwnProfile = async (
     user: IUser,
     input: UpdateProfileInput
 ): Promise<IUser> => {
+    const tenantFieldsProvided =
+        input.instrumentId !== undefined ||
+        input.instrumentLabel !== undefined ||
+        input.voice !== undefined;
+
+    if (user.role === 'SUPER_ADMIN' && tenantFieldsProvided) {
+        throw new AppError(
+            400,
+            'PLATFORM_PROFILE_TENANT_FIELDS_NOT_ALLOWED',
+            'A SUPER_ADMIN profile cannot define tenant instrument or voice fields'
+        );
+    }
+
+    if (user.role !== 'SUPER_ADMIN' && input.preferredChoirId !== undefined) {
+        throw new AppError(
+            403,
+            'PREFERRED_CHOIR_NOT_ALLOWED',
+            'Only SUPER_ADMIN accounts can define a preferred platform choir'
+        );
+    }
+
     if (input.name !== undefined) user.name = input.name;
     if (input.username !== undefined) user.username = input.username;
     if (input.email !== undefined) user.email = input.email;
@@ -223,6 +247,31 @@ export const updateOwnProfile = async (
     }
     if (input.voice !== undefined) user.voice = input.voice;
     if (input.bio !== undefined) user.bio = input.bio;
+
+    if (input.preferredChoirId !== undefined) {
+        if (input.preferredChoirId === null) {
+            user.preferredChoirId = null;
+        } else {
+            const preferredChoirId = parseObjectId(
+                input.preferredChoirId,
+                'preferredChoirId'
+            );
+            const preferredChoir = await Choir.findOne({
+                _id: preferredChoirId,
+                isActive: true
+            }).select('_id');
+
+            if (!preferredChoir) {
+                throw new AppError(
+                    404,
+                    'PREFERRED_CHOIR_NOT_FOUND',
+                    'The preferred choir does not exist or is inactive'
+                );
+            }
+
+            user.preferredChoirId = preferredChoir._id;
+        }
+    }
 
     await user.save();
     return user;

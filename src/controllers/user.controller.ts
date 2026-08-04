@@ -131,6 +131,7 @@ export const updateOwnProfileController = async (
 ): Promise<void> => {
     const user = await getCurrentUserDocument(req);
     const input = parseUpdateProfileInput(req);
+    const before = serializeUser(user);
     const previousAssetId = user.imageAssetId;
     const uploaded = req.file
         ? await uploadProfileImage(req.file, user.choirId, user._id)
@@ -171,7 +172,25 @@ export const updateOwnProfileController = async (
         });
     }
 
-    res.json({ user: serializeUser(updatedUser) });
+    const after = serializeUser(updatedUser);
+    const auditChoirId = after.preferredChoirId ?? before.preferredChoirId;
+
+    if (updatedUser.role === 'SUPER_ADMIN' && auditChoirId) {
+        await registerLog({
+            req,
+            collection: 'PlatformProfiles',
+            action: 'update',
+            operation: 'platform.profile_update',
+            referenceId: updatedUser.id,
+            targetUserId: updatedUser.id,
+            choirId: auditChoirId,
+            before,
+            after,
+            changes: { before, after }
+        });
+    }
+
+    res.json({ user: after });
 };
 
 export const searchUsersController = async (

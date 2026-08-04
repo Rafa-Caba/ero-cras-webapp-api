@@ -4,6 +4,7 @@ import { Types } from 'mongoose';
 import type { FilterQuery } from 'mongoose';
 import { AppError } from '../errors/AppError';
 import Choir, { IChoir } from '../models/Choir';
+import User from '../models/User';
 import type { AuthenticatedUser } from '../types/auth.types';
 import type {
     CreateChoirInput,
@@ -193,6 +194,10 @@ export const updateChoir = async (
     await choir.save();
 
     if (wasActive && !choir.isActive) {
+        await User.updateMany(
+            { role: 'SUPER_ADMIN', preferredChoirId: choir._id },
+            { $set: { preferredChoirId: null } }
+        );
         await unregisterChoirPushDevices(
             choir._id,
             'Choir deactivated'
@@ -224,6 +229,11 @@ export const deactivateChoir = async (
     choir.isActive = false;
     choir.updatedBy = new Types.ObjectId(actorUserId);
     await choir.save();
+
+    await User.updateMany(
+        { role: 'SUPER_ADMIN', preferredChoirId: choir._id },
+        { $set: { preferredChoirId: null } }
+    );
 
     await unregisterChoirPushDevices(
         choir._id,

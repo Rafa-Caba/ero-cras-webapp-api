@@ -22,7 +22,8 @@
     "verify:qa": "npm run verify:phase-17-18",
     "verify:phase-17-18": "npm run typecheck && npm run build && npm run lint && npm test",
     "qa:phase-17": "bash scripts/qa/phase-17-api.sh",
-    "qa:phase-18:api": "bash scripts/qa/phase-18-api-preflight.sh"
+    "qa:phase-18:api": "bash scripts/qa/phase-18-api-preflight.sh",
+    "qa:platform-profile": "bash scripts/qa/platform-profile-context.sh"
   },
   "keywords": [],
   "author": "",
