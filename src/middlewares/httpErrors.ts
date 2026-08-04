@@ -5,6 +5,18 @@ import multer from 'multer';
 import { AppError } from '../errors/AppError';
 import type { ApiErrorResponse } from '../types/http.types';
 
+interface RequestAbortedError extends Error {
+    readonly code?: string;
+    readonly expected?: number;
+    readonly received?: number;
+    readonly type?: string;
+}
+
+const isRequestAbortedError = (error: Error): error is RequestAbortedError => {
+    const candidate = error as RequestAbortedError;
+    return candidate.type === 'request.aborted' || candidate.code === 'ECONNABORTED';
+};
+
 export const notFoundHandler = (
     req: Request,
     res: Response<ApiErrorResponse>
@@ -17,7 +29,7 @@ export const notFoundHandler = (
 
 export const errorHandler = (
     error: Error,
-    _req: Request,
+    req: Request,
     res: Response<ApiErrorResponse>,
     _next: NextFunction
 ): void => {
@@ -41,6 +53,23 @@ export const errorHandler = (
                 ? 'MEDIA_FILE_TOO_LARGE'
                 : 'MEDIA_UPLOAD_ERROR'
         });
+        return;
+    }
+
+    if (isRequestAbortedError(error)) {
+        console.warn('HTTP request aborted by client', {
+            method: req.method,
+            path: req.originalUrl,
+            expected: error.expected,
+            received: error.received
+        });
+
+        if (!res.headersSent && !res.writableEnded) {
+            res.status(400).json({
+                message: 'The request was interrupted before it completed',
+                code: 'REQUEST_ABORTED'
+            });
+        }
         return;
     }
 

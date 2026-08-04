@@ -25,6 +25,25 @@ const initializeSocketConnection = async (
         transport: socket.conn.transport.name
     });
 
+    socket.conn.on('upgrade', (transport) => {
+        console.info('Socket transport upgraded', {
+            socketId: socket.id,
+            userId: user.id,
+            choirId: user.choirId,
+            transport: transport.name
+        });
+    });
+
+    socket.conn.on('error', (error) => {
+        console.warn('Socket transport error', {
+            socketId: socket.id,
+            userId: user.id,
+            choirId: user.choirId,
+            message: error.message,
+            transport: socket.conn.transport.name
+        });
+    });
+
     socket.on('typing', (isTyping) => {
         if (typeof isTyping !== 'boolean') {
             return;
@@ -51,6 +70,13 @@ const initializeSocketConnection = async (
 export const configuringSockets = (io: ChoirSocketServer): void => {
     registerSocketServer(io);
     io.use(authenticateSocket);
+
+    io.engine.on('connection_error', (error) => {
+        console.warn('Socket connection error', {
+            code: error.code,
+            message: error.message
+        });
+    });
 
     io.on('connection', (socket) => {
         initializeSocketConnection(socket).catch((error: Error) => {

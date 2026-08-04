@@ -1,6 +1,6 @@
 // src/server.ts
 
-import express, { Application } from 'express';
+import express, { Application, type NextFunction, type Request, type Response } from 'express';
 import cors from 'cors';
 import http from 'http';
 import { Server as SocketIOServer } from 'socket.io';
@@ -51,8 +51,29 @@ app.use(cors({
     credentials: true
 }));
 
-app.use(express.json({ limit: '100mb' }));
-app.use(express.urlencoded({ limit: '100mb', extended: true }));
+const isSocketIoRequest = (req: Request): boolean =>
+    req.path === '/socket.io' || req.path.startsWith('/socket.io/');
+
+const jsonParser = express.json({ limit: '100mb' });
+const urlencodedParser = express.urlencoded({ limit: '100mb', extended: true });
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+    if (isSocketIoRequest(req)) {
+        next();
+        return;
+    }
+
+    jsonParser(req, res, next);
+});
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+    if (isSocketIoRequest(req)) {
+        next();
+        return;
+    }
+
+    urlencodedParser(req, res, next);
+});
 
 app.use('/api/public/:choirCode', publicRoutes);
 app.use('/api/auth', authRoutes);
@@ -85,6 +106,10 @@ const startServer = async (): Promise<void> => {
         InterServerEvents,
         ChoirSocketData
     >(httpServer, {
+        transports: ['websocket', 'polling'],
+        allowUpgrades: true,
+        pingInterval: 25_000,
+        pingTimeout: 30_000,
         cors: {
             origin: (origin, callback) => {
                 if (isOriginAllowed(origin)) {
