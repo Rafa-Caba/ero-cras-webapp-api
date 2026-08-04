@@ -18,6 +18,13 @@ const initializeSocketConnection = async (
     await socket.join(choirRoom);
     registerSocketConnection(socket);
 
+    console.info('Socket connected', {
+        socketId: socket.id,
+        userId: user.id,
+        choirId: user.choirId,
+        transport: socket.conn.transport.name
+    });
+
     socket.on('typing', (isTyping) => {
         if (typeof isTyping !== 'boolean') {
             return;
@@ -30,8 +37,14 @@ const initializeSocketConnection = async (
         });
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
         unregisterSocketConnection(socket.id);
+        console.info('Socket disconnected', {
+            socketId: socket.id,
+            userId: user.id,
+            choirId: user.choirId,
+            reason
+        });
     });
 };
 
@@ -40,7 +53,11 @@ export const configuringSockets = (io: ChoirSocketServer): void => {
     io.use(authenticateSocket);
 
     io.on('connection', (socket) => {
-        initializeSocketConnection(socket).catch(() => {
+        initializeSocketConnection(socket).catch((error: Error) => {
+            console.error('Socket initialization failed', {
+                socketId: socket.id,
+                message: error.message
+            });
             unregisterSocketConnection(socket.id);
             socket.disconnect(true);
         });

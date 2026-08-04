@@ -50,7 +50,9 @@ const IMAGE_FILE_TYPES: readonly AllowedFileType[] = [
     { mimeType: 'image/jpeg', extensions: ['jpg', 'jpeg'] },
     { mimeType: 'image/png', extensions: ['png'] },
     { mimeType: 'image/gif', extensions: ['gif'] },
-    { mimeType: 'image/webp', extensions: ['webp'] }
+    { mimeType: 'image/webp', extensions: ['webp'] },
+    { mimeType: 'image/heic', extensions: ['heic'] },
+    { mimeType: 'image/heif', extensions: ['heif'] }
 ];
 
 const AUDIO_FILE_TYPES: readonly AllowedFileType[] = [

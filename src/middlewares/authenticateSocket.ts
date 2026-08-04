@@ -30,15 +30,29 @@ export const authenticateSocket = async (
         next();
     } catch (error) {
         if (error instanceof AppError) {
+            console.error('Socket authentication rejected', {
+                socketId: socket.id,
+                code: error.code,
+                statusCode: error.statusCode,
+                message: error.message
+            });
             next(new SocketAuthenticationError(error));
             return;
         }
 
         if (error instanceof Error) {
+            console.error('Socket authentication failed', {
+                socketId: socket.id,
+                message: error.message
+            });
             next(error);
             return;
         }
 
+        console.error('Socket authentication failed', {
+            socketId: socket.id,
+            message: 'Unexpected socket authentication error'
+        });
         next(new Error('Socket authentication failed'));
     }
 };

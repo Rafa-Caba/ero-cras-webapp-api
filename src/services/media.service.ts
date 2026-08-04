@@ -1,7 +1,6 @@
 // src/services/media.service.ts
 
 import { randomUUID } from 'crypto';
-import { Readable } from 'stream';
 import { Types } from 'mongoose';
 import type {
     UploadApiErrorResponse,
@@ -101,10 +100,44 @@ const createPublicId = (
     return base;
 };
 
+const toCloudinaryUploadError = (
+    error: UploadApiErrorResponse
+): AppError => {
+    const message = error.message?.trim() || 'Cloudinary rejected the uploaded media';
+
+    if (error.http_code === 400 || message.toLowerCase().includes('empty file')) {
+        return new AppError(
+            400,
+            'INVALID_MEDIA_FILE',
+            message.toLowerCase().includes('empty file')
+                ? 'The uploaded file is empty'
+                : message
+        );
+    }
+
+    return new AppError(
+        502,
+        'MEDIA_PROVIDER_ERROR',
+        'The media provider could not process the uploaded file'
+    );
+};
+
+const assertUploadBuffer = (file: Express.Multer.File): void => {
+    if (file.size <= 0 || file.buffer.length <= 0) {
+        throw new AppError(
+            400,
+            'EMPTY_MEDIA_FILE',
+            'The uploaded file is empty'
+        );
+    }
+};
+
 const uploadBuffer = (
     file: Express.Multer.File,
     folder: string
 ): Promise<UploadApiResponse> => {
+    assertUploadBuffer(file);
+
     return new Promise<UploadApiResponse>((resolve, reject) => {
         const resourceType = requestedResourceType(file.mimetype);
         const stream = cloudinary.uploader.upload_stream(
@@ -118,12 +151,16 @@ const uploadBuffer = (
                 result: UploadApiResponse | undefined
             ) => {
                 if (error) {
-                    reject(error);
+                    reject(toCloudinaryUploadError(error));
                     return;
                 }
 
                 if (!result) {
-                    reject(new Error('Cloudinary upload returned no result'));
+                    reject(new AppError(
+                        502,
+                        'MEDIA_PROVIDER_EMPTY_RESPONSE',
+                        'The media provider returned no upload result'
+                    ));
                     return;
                 }
 
@@ -131,7 +168,7 @@ const uploadBuffer = (
             }
         );
 
-        Readable.from(file.buffer).pipe(stream);
+        stream.end(file.buffer);
     });
 };
 
