@@ -179,6 +179,42 @@ export const readOptionalObject = (
     return value;
 };
 
+export const readOptionalContent = (
+    body: RequestBody,
+    fieldName: string
+): string | object | undefined => {
+    const value = body[fieldName];
+
+    if (value === undefined || value === null) {
+        return undefined;
+    }
+
+    if (typeof value === 'string') {
+        const normalizedValue = value.trim();
+
+        if (!normalizedValue) {
+            return '';
+        }
+
+        try {
+            const parsedValue: object = JSON.parse(normalizedValue);
+            return parsedValue;
+        } catch {
+            return normalizedValue;
+        }
+    }
+
+    if (typeof value === 'object') {
+        return value;
+    }
+
+    throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        `${fieldName} must be text or an object`
+    );
+};
+
 export const readRequiredContent = (
     body: RequestBody,
     fieldName: string
