@@ -1,5 +1,7 @@
+// src/utils/constants.ts
+
 // Added 'media' to the list
-export const VALID_MESSAGE_TYPES = ['TEXT', 'IMAGE', 'FILE', 'MEDIA', 'REACTION', 'AUDIO', 'VIDEO'];
+export const VALID_MESSAGE_TYPES = ['TEXT', 'IMAGE', 'FILE', 'MEDIA', 'REACTION', 'AUDIO', 'VIDEO', 'STICKER'];
 
 // Added mobile audio formats: m4a, aac, 3gp, ogg
 export const ALLOWED_MEDIA_EXTENSIONS = [
