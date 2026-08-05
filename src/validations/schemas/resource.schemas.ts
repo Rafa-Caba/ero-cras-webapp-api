@@ -23,6 +23,7 @@ import type {
 import {
     parseRequestBody,
     readOptionalBoolean,
+    readOptionalContent,
     readOptionalNumber,
     readOptionalObject,
     readOptionalObjectId,
@@ -242,14 +243,17 @@ export const parseThemeInput = (req: Request): ThemeInput => {
 
 export const parseChatMessageInput = (req: Request): ChatMessageInput => {
     const body = parseRequestBody(req);
+    const type = readMessageType(readOptionalString(body, 'type'));
     const replyTo = readOptionalObjectId(body, 'replyTo') ??
         readOptionalObjectId(body, 'replyToId');
-
     const mediaAssetId = readOptionalObjectId(body, 'mediaAssetId');
+    const content = type === 'TEXT' || type === 'REACTION'
+        ? readRequiredContent(body, 'content')
+        : readOptionalContent(body, 'content') ?? '';
 
     return {
-        content: readRequiredContent(body, 'content'),
-        type: readMessageType(readOptionalString(body, 'type')),
+        content,
+        type,
         filename: readOptionalString(body, 'filename') ?? '',
         mediaAssetId: mediaAssetId === undefined
             ? undefined
