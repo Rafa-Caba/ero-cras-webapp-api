@@ -1,30 +1,48 @@
+// src/utils/normalizeUser.ts
+
+import type { Types } from 'mongoose';
 import type { IUser } from '../models/User';
-import type { Document } from 'mongoose';
 
-export const normalizeUserWithChoir = (user: IUser & Document) => {
-    const userJson: any = user.toJSON();
+interface PopulatedChoirReference {
+    readonly _id: Types.ObjectId;
+    readonly id?: string;
+    readonly name?: string;
+    readonly code?: string;
+}
 
-    let choirIdString: string | undefined = undefined;
-    let choirName: string | undefined = undefined;
-    let choirCode: string | undefined = undefined;
+type ChoirReference = Types.ObjectId | PopulatedChoirReference;
+type UserWithChoirReference = Omit<IUser, 'choirId'> & {
+    readonly choirId?: ChoirReference | null;
+};
 
-    if (user.choirId) {
-        const choirAny = user.choirId as any;
+const isPopulatedChoir = (
+    choir: ChoirReference
+): choir is PopulatedChoirReference => {
+    return 'name' in choir || 'code' in choir;
+};
 
-        if (typeof choirAny === 'object' && choirAny !== null) {
-            choirIdString =
-                choirAny.id ??
-                (choirAny._id ? choirAny._id.toString() : undefined);
-            choirName = choirAny.name;
-            choirCode = choirAny.code;
-        } else {
-            choirIdString = user.choirId.toString();
-        }
+export const normalizeUserWithChoir = (user: UserWithChoirReference) => {
+    const userJson = user.toJSON();
+    const choir = user.choirId;
+
+    if (!choir) {
+        return {
+            ...userJson,
+            choirId: null
+        };
     }
 
-    if (choirIdString) userJson.choirId = choirIdString;
-    if (choirName) userJson.choirName = choirName;
-    if (choirCode) userJson.choirCode = choirCode;
+    if (isPopulatedChoir(choir)) {
+        return {
+            ...userJson,
+            choirId: choir.id ?? choir._id.toString(),
+            ...(choir.name ? { choirName: choir.name } : {}),
+            ...(choir.code ? { choirCode: choir.code } : {})
+        };
+    }
 
-    return userJson;
+    return {
+        ...userJson,
+        choirId: choir.toString()
+    };
 };
