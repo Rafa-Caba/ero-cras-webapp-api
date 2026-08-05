@@ -16,7 +16,8 @@ export type MessageType =
     | 'MEDIA'
     | 'REACTION'
     | 'AUDIO'
-    | 'VIDEO';
+    | 'VIDEO'
+    | 'STICKER';
 
 export interface ChatReaction {
     emoji: string;
@@ -37,6 +38,8 @@ export interface IChatMessage extends Document<Types.ObjectId> {
     mediaAssetId?: Types.ObjectId | null;
     reactions: ChatReaction[];
     replyTo?: Types.ObjectId | null;
+    deliveredTo: Types.ObjectId[];
+    readBy: Types.ObjectId[];
     createdBy: Types.ObjectId;
     createdAt: Date;
     updatedAt: Date;
@@ -53,7 +56,7 @@ const ChatMessageSchema = new Schema<IChatMessage>(
         content: { type: Schema.Types.Mixed, required: true },
         type: {
             type: String,
-            enum: ['TEXT', 'IMAGE', 'FILE', 'MEDIA', 'REACTION', 'AUDIO', 'VIDEO'],
+            enum: ['TEXT', 'IMAGE', 'FILE', 'MEDIA', 'REACTION', 'AUDIO', 'VIDEO', 'STICKER'],
             required: true
         },
         fileUrl: { type: String, default: '' },
@@ -74,6 +77,8 @@ const ChatMessageSchema = new Schema<IChatMessage>(
             ref: 'ChatMessage',
             default: null
         },
+        deliveredTo: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+        readBy: [{ type: Schema.Types.ObjectId, ref: 'User' }],
         createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true }
     },
     {
@@ -93,6 +98,8 @@ ChatMessageSchema.pre('validate', async function validateTenantRelations(this: I
         this.choirId,
         'reactions.user'
     );
+    await assertSameChoirRelations(User, this.deliveredTo, this.choirId, 'deliveredTo');
+    await assertSameChoirRelations(User, this.readBy, this.choirId, 'readBy');
 
     if (!this.replyTo) {
         return;
