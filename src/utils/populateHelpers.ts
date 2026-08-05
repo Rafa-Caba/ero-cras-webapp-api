@@ -1,12 +1,18 @@
-import mongoose, { Query } from 'mongoose';
+// src/utils/populateHelpers.ts
 
-export const applyPopulateAuthors = <T>(query: Query<T[], any>) => {
+import type { Query } from 'mongoose';
+
+export const applyPopulateAuthors = <TDocument>(
+    query: Query<TDocument[], TDocument>
+): Query<TDocument[], TDocument> => {
     return query
         .populate('createdBy', 'name username')
         .populate('updatedBy', 'name username');
 };
 
-export const applyPopulateSingleAuthor = <T>(query: Query<T | null, any>) => {
+export const applyPopulateSingleAuthor = <TDocument>(
+    query: Query<TDocument | null, TDocument>
+): Query<TDocument | null, TDocument> => {
     return query
         .populate('createdBy', 'name username')
         .populate('updatedBy', 'name username');
