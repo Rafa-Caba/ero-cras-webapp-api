@@ -13,7 +13,10 @@ const changedSources = [
     'src/config/database.ts',
     'src/controllers/announcement.controller.ts',
     'src/controllers/blog.controller.ts',
+    'src/controllers/chat.controller.ts',
     'src/controllers/songType.controller.ts',
+    'src/models/ChatMessage.ts',
+    'src/routes/chat.ts',
     'src/validations/schemas/common.schemas.ts',
     'src/validations/schemas/resource.schemas.ts',
     'src/controllers/user.controller.ts',
@@ -21,6 +24,7 @@ const changedSources = [
     'src/services/media.service.ts',
     'src/server.ts',
     'src/socket.ts',
+    'src/utils/constants.ts',
     'src/utils/logger.ts',
     'src/utils/notificationHelper.ts'
 ];
@@ -36,6 +40,10 @@ for (const relativePath of changedSources) {
 
 const database = read('src/config/database.ts');
 const blogController = read('src/controllers/blog.controller.ts');
+const chatController = read('src/controllers/chat.controller.ts');
+const chatModel = read('src/models/ChatMessage.ts');
+const chatRoutes = read('src/routes/chat.ts');
+const constants = read('src/utils/constants.ts');
 const songTypeController = read('src/controllers/songType.controller.ts');
 const announcementController = read('src/controllers/announcement.controller.ts');
 const userController = read('src/controllers/user.controller.ts');
@@ -77,7 +85,16 @@ assert.match(mediaService, /platform\/users/u);
 assert.match(userController, /platformUploaded/u);
 assert.match(userController, /deleteCloudinaryMedia/u);
 assert.match(commonSchemas, /readOptionalContent/u);
-assert.match(resourceSchemas, /type === 'TEXT' \|\| type === 'REACTION'/u);
+assert.match(resourceSchemas, /type === 'TEXT' \|\| type === 'REACTION' \|\| type === 'STICKER'/u);
 assert.match(resourceSchemas, /readOptionalContent\(body, 'content'\) \?\? ''/u);
+assert.match(commonSchemas, /readRequiredStringArray/u);
+assert.match(chatController, /markChatReceiptsController/u);
+assert.match(chatController, /deliveredTo: \[actorUserId\]/u);
+assert.match(chatController, /readBy: \[actorUserId\]/u);
+assert.match(chatModel, /deliveredTo/u);
+assert.match(chatModel, /readBy/u);
+assert.match(chatModel, /'STICKER'/u);
+assert.match(chatRoutes, /'\/receipts'/u);
+assert.match(constants, /'STICKER'/u);
 
 console.log('Production and performance regression API contract tests passed.');
