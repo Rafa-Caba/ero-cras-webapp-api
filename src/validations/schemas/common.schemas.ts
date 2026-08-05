@@ -48,6 +48,40 @@ export const parseRequestBody = (req: Request): RequestBody => {
     return parsedBody;
 };
 
+const isRequestValueArray = (value: RequestValue): value is readonly RequestValue[] => {
+    return Array.isArray(value);
+};
+
+export const readRequiredStringArray = (
+    body: RequestBody,
+    fieldName: string,
+    maxItems = 100
+): readonly string[] => {
+    const value = body[fieldName];
+
+    if (!isRequestValueArray(value) || value.length === 0 || value.length > maxItems) {
+        throw new AppError(
+            400,
+            'VALIDATION_ERROR',
+            `${fieldName} must contain between 1 and ${maxItems} values`
+        );
+    }
+
+    const strings = value.map((item) => {
+        if (typeof item !== 'string' || !item.trim()) {
+            throw new AppError(
+                400,
+                'VALIDATION_ERROR',
+                `${fieldName} must contain non-empty strings`
+            );
+        }
+
+        return item.trim();
+    });
+
+    return [...new Set(strings)];
+};
+
 export const readRequiredString = (
     body: RequestBody,
     fieldName: string
