@@ -14,6 +14,8 @@ const changedSources = [
     'src/controllers/announcement.controller.ts',
     'src/controllers/blog.controller.ts',
     'src/controllers/songType.controller.ts',
+    'src/validations/schemas/common.schemas.ts',
+    'src/validations/schemas/resource.schemas.ts',
     'src/controllers/user.controller.ts',
     'src/middlewares/requestTiming.ts',
     'src/services/media.service.ts',
@@ -43,6 +45,8 @@ const socket = read('src/socket.ts');
 const logger = read('src/utils/logger.ts');
 const notificationHelper = read('src/utils/notificationHelper.ts');
 const mediaService = read('src/services/media.service.ts');
+const commonSchemas = read('src/validations/schemas/common.schemas.ts');
+const resourceSchemas = read('src/validations/schemas/resource.schemas.ts');
 
 assert.match(database, /maxPoolSize: 20/u);
 assert.match(database, /minPoolSize: 2/u);
@@ -72,5 +76,8 @@ assert.match(mediaService, /uploadPlatformProfileMedia/u);
 assert.match(mediaService, /platform\/users/u);
 assert.match(userController, /platformUploaded/u);
 assert.match(userController, /deleteCloudinaryMedia/u);
+assert.match(commonSchemas, /readOptionalContent/u);
+assert.match(resourceSchemas, /type === 'TEXT' \|\| type === 'REACTION'/u);
+assert.match(resourceSchemas, /readOptionalContent\(body, 'content'\) \?\? ''/u);
 
 console.log('Production and performance regression API contract tests passed.');
