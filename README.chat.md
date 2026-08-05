@@ -1,36 +1,38 @@
-# README.chat.md
+<!-- README.chat.md -->
 
-# Chat de Choir App
+# Choir App Chat
 
-Este módulo implementa el chat privado y multi-coro utilizado por la aplicación React Native. La identidad, el rol y el coro efectivo siempre se obtienen de la sesión autenticada del servidor.
+This module implements the private, multi-choir chat used by the React Native application.
 
-## Capacidades actuales
+The effective user identity, role, and choir are always derived from the server-side authenticated session.
 
-- Mensajes de texto.
-- Imágenes y fotografías tomadas desde la cámara.
-- Videos y documentos.
-- Notas de voz.
-- Stickers Unicode mediante el tipo `STICKER`.
-- Respuestas con referencia `replyTo` al mensaje original.
-- Reacciones.
-- Estados enviado, entregado y leído.
-- Presencia y escritura en tiempo real mediante Socket.IO.
-- Aislamiento estricto por `choirId`.
-- Uploads administrados por coro y vinculados a `MediaAsset`.
+## Current capabilities
+
+- Text messages.
+- Images and photos captured with the camera.
+- Videos and documents.
+- Voice messages.
+- Unicode stickers through the `STICKER` message type.
+- Replies using a `replyTo` reference to the original message.
+- Reactions.
+- Sent, delivered, and read states.
+- Real-time presence and typing events through Socket.IO.
+- Strict isolation by `choirId`.
+- Choir-scoped managed uploads linked to `MediaAsset`.
 
 ## Endpoints
 
-| Método | Endpoint | Uso |
+| Method | Endpoint | Purpose |
 |---|---|---|
-| `GET` | `/api/chat/history` | Historial del coro autenticado. |
-| `POST` | `/api/chat` | Crear un mensaje. |
-| `PATCH` | `/api/chat/receipts` | Marcar mensajes como entregados o leídos. |
-| `PATCH` | `/api/chat/:messageId/reaction` | Agregar, cambiar o retirar una reacción. |
-| `POST` | `/api/chat/upload-image` | Subir una imagen del chat. |
-| `POST` | `/api/chat/upload-media` | Subir audio o video. |
-| `POST` | `/api/chat/upload-file` | Subir un documento. |
+| `GET` | `/api/chat/history` | Returns the authenticated choir's message history. |
+| `POST` | `/api/chat` | Creates a message. |
+| `PATCH` | `/api/chat/receipts` | Marks messages as delivered or read. |
+| `PATCH` | `/api/chat/:messageId/reaction` | Adds, changes, or removes a reaction. |
+| `POST` | `/api/chat/upload-image` | Uploads a chat image. |
+| `POST` | `/api/chat/upload-media` | Uploads audio or video. |
+| `POST` | `/api/chat/upload-file` | Uploads a document. |
 
-## Contrato para crear mensajes
+## Message creation contract
 
 ```ts
 {
@@ -41,19 +43,23 @@ Este módulo implementa el chat privado y multi-coro utilizado por la aplicació
 }
 ```
 
-`replyTo` guarda el identificador del mensaje original. El API valida que ambos mensajes pertenezcan al mismo coro y devuelve la referencia poblada con su autor para que React Native muestre el preview.
+`replyTo` stores the identifier of the original message.
+
+The API validates that both messages belong to the same choir and returns the populated reference, including its author, so React Native can display the reply preview.
 
 ## Socket.IO
 
-El socket recibe únicamente el access token y, para `SUPER_ADMIN`, el coro objetivo explícito. El servidor vuelve a cargar al usuario, valida su sesión y lo incorpora al room:
+The socket receives only the access token and, for a `SUPER_ADMIN`, the explicit target choir.
+
+The server reloads the user from the database, validates the session, resolves the effective choir, and joins the socket to:
 
 ```text
 choir:<choirId>
 ```
 
-El cliente no puede elegir libremente su identidad, rol ni coro.
+The client cannot freely select its identity, role, or choir.
 
-## Archivos principales
+## Main files
 
 ```text
 src/controllers/chat.controller.ts
@@ -64,7 +70,7 @@ src/types/socket.types.ts
 src/validations/schemas/resource.schemas.ts
 ```
 
-## Verificación
+## Verification
 
 ```bash
 npm run typecheck
