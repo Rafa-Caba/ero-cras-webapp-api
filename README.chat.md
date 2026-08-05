@@ -1,105 +1,74 @@
-# 🧩 Chat Module (Admin Group Chat)
+# README.chat.md
 
-This module implements a **real-time group chat** system within the Choirs Admin Panel. It allows administrators, editors, and viewers to communicate live using a rich text editor, with support for embedded images, scroll behavior, and activity logging.
+# Chat de Choir App
 
----
+Este módulo implementa el chat privado y multi-coro utilizado por la aplicación React Native. La identidad, el rol y el coro efectivo siempre se obtienen de la sesión autenticada del servidor.
 
-## ✨ Features
+## Capacidades actuales
 
-- **Real-time messaging** via WebSocket (`socket.io`)
-- **Rich text editing** using TipTap (based on ProseMirror)
-- Support for **embedded images**
-- **Auto-scroll** to the latest message (even when images load late)
-- **User-based alignment** (right for current user, left for others)
-- **Live typing and message input animations**
-- **User activity logging** when sending a message
+- Mensajes de texto.
+- Imágenes y fotografías tomadas desde la cámara.
+- Videos y documentos.
+- Notas de voz.
+- Stickers Unicode mediante el tipo `STICKER`.
+- Respuestas con referencia `replyTo` al mensaje original.
+- Reacciones.
+- Estados enviado, entregado y leído.
+- Presencia y escritura en tiempo real mediante Socket.IO.
+- Aislamiento estricto por `choirId`.
+- Uploads administrados por coro y vinculados a `MediaAsset`.
 
----
+## Endpoints
 
-## 🧠 Technologies Used
+| Método | Endpoint | Uso |
+|---|---|---|
+| `GET` | `/api/chat/history` | Historial del coro autenticado. |
+| `POST` | `/api/chat` | Crear un mensaje. |
+| `PATCH` | `/api/chat/receipts` | Marcar mensajes como entregados o leídos. |
+| `PATCH` | `/api/chat/:messageId/reaction` | Agregar, cambiar o retirar una reacción. |
+| `POST` | `/api/chat/upload-image` | Subir una imagen del chat. |
+| `POST` | `/api/chat/upload-media` | Subir audio o video. |
+| `POST` | `/api/chat/upload-file` | Subir un documento. |
 
-### Frontend
-- **React + Vite**
-- **TipTap Editor** with custom toolbar and image support
-- **Zustand** state management (`useChatStore`)
-- **Socket.io-client**
+## Contrato para crear mensajes
 
-### Backend
-- **Node.js + Express**
-- **Socket.io (server-side)**
-- **MongoDB** with Mongoose
-- **Cloudinary** for image uploads (via API)
-- **Activity log middleware**
-
----
-
-## 🔌 API Endpoints
-
-| Method | Endpoint         | Description                |
-|--------|------------------|----------------------------|
-| GET    | `/chat`          | Retrieve chat history      |
-| POST   | `/chat`          | Save new message to DB     |
-| WS     | `/socket.io`     | Real-time WebSocket server |
-
----
-
-## 📦 Models
-
-### `ChatMessage`
 ```ts
 {
-  contenido: JSONContent,  // TipTap content
-  creadoPor: ObjectId,     // Reference to User
-  creadoEn: Date,
-  tipo: 'texto' | 'imagen',
-  imagenUrl?: string,
-  imagenPublicId?: string
+    content: JsonValue;
+    type: 'TEXT' | 'IMAGE' | 'FILE' | 'MEDIA' | 'REACTION' | 'AUDIO' | 'VIDEO' | 'STICKER';
+    mediaAssetId?: string;
+    replyTo?: string;
 }
 ```
 
----
+`replyTo` guarda el identificador del mensaje original. El API valida que ambos mensajes pertenezcan al mismo coro y devuelve la referencia poblada con su autor para que React Native muestre el preview.
 
-## ⚙️ .env Variables (Frontend & Backend)
+## Socket.IO
 
-### `.env` (Frontend)
-```env
-VITE_API_URL=https://chiors-api-production.up.railway.app
+El socket recibe únicamente el access token y, para `SUPER_ADMIN`, el coro objetivo explícito. El servidor vuelve a cargar al usuario, valida su sesión y lo incorpora al room:
+
+```text
+choir:<choirId>
 ```
 
-### `.env` (Backend)
-```env
-FRONTEND_URL=https://choirs-webapp.vercel.app
-CLOUDINARY_URL=...
+El cliente no puede elegir libremente su identidad, rol ni coro.
+
+## Archivos principales
+
+```text
+src/controllers/chat.controller.ts
+src/models/ChatMessage.ts
+src/routes/chat.ts
+src/socket.ts
+src/types/socket.types.ts
+src/validations/schemas/resource.schemas.ts
 ```
 
----
+## Verificación
 
-## 🚀 Deployment
-
-- **Frontend**: Vercel  
-- **Backend + WebSocket**: Railway  
-- **Database**: MongoDB Atlas  
-- **Images**: Cloudinary
-
----
-
-## 🧪 Testing
-
-- Run two browser sessions (user A and user B)
-- Send message from one → should appear instantly on both
-- Add image via TipTap → ensure it uploads and displays correctly
-- Check scroll behavior after sending/receiving messages
-- Confirm logs are recorded under `/admin/my-profile` or `/admin/logs`
-
----
-
-## 📁 File Locations
-
-- **Frontend**: `src/components-admin/AdminChat.tsx`
-- **Backend**: `routes/chat.js`, `models/ChatMessage.js`
-- **Socket Server**: in `server.ts` under `io.on('connection')`
-
----
-
-## 🧑‍💻 Author
-This module was implemented by [Rafael Cabanillas](https://github.com/rafacabanillas) as part of the Ero Cras Project.
+```bash
+npm run typecheck
+npm run build
+npm run lint
+npm test
+```
