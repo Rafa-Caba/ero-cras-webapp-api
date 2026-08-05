@@ -20,6 +20,26 @@ interface SongTypeParams {
     readonly id: string;
 }
 
+interface SongTypeResponse {
+    readonly id: string;
+    readonly name: string;
+    readonly order: number;
+    readonly parentId: string | null;
+    readonly isParent: boolean;
+    readonly createdAt?: Date;
+    readonly updatedAt?: Date;
+}
+
+const serializeSongType = (songType: ISongType): SongTypeResponse => ({
+    id: songType.id,
+    name: songType.name,
+    order: songType.order,
+    parentId: songType.parentId?.toString() ?? null,
+    isParent: songType.isParent,
+    createdAt: songType.createdAt,
+    updatedAt: songType.updatedAt
+});
+
 const findSongType = async (
     id: string,
     choirId: ReturnType<typeof parseObjectId>
@@ -41,11 +61,9 @@ export const listSongTypesController = async (
 ): Promise<void> => {
     const songTypes = await SongType.find({
         choirId: requireEffectiveChoirObjectId(req)
-    })
-        .populate('parentId', 'name order')
-        .sort({ order: 1, name: 1 });
+    }).sort({ order: 1, name: 1 });
 
-    sendCacheableJson(req, res, songTypes);
+    sendCacheableJson(req, res, songTypes.map(serializeSongType));
 };
 
 export const getSongTypeController = async (
@@ -56,8 +74,7 @@ export const getSongTypeController = async (
         req.params.id,
         requireEffectiveChoirObjectId(req)
     );
-    await songType.populate('parentId', 'name order');
-    res.json(songType);
+    res.json(serializeSongType(songType));
 };
 
 export const createSongTypeController = async (
@@ -82,7 +99,7 @@ export const createSongTypeController = async (
         changes: { after: songType.toObject() }
     });
 
-    res.status(201).json(songType);
+    res.status(201).json(serializeSongType(songType));
 };
 
 export const updateSongTypeController = async (
@@ -98,9 +115,13 @@ export const updateSongTypeController = async (
 
     songType.name = input.name;
     songType.order = input.order;
-    songType.parentId = input.parentId
-        ? parseObjectId(input.parentId, 'parentId')
-        : null;
+
+    if (input.parentId !== undefined) {
+        songType.parentId = input.parentId
+            ? parseObjectId(input.parentId, 'parentId')
+            : null;
+    }
+
     songType.isParent = input.isParent;
     songType.updatedBy = requireAuthenticatedUserId(req);
     await songType.save();
@@ -113,7 +134,7 @@ export const updateSongTypeController = async (
         changes: { before, after: songType.toObject() }
     });
 
-    res.json(songType);
+    res.json(serializeSongType(songType));
 };
 
 export const deleteSongTypeController = async (

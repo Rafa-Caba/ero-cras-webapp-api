@@ -13,6 +13,7 @@ const changedSources = [
     'src/config/database.ts',
     'src/controllers/announcement.controller.ts',
     'src/controllers/blog.controller.ts',
+    'src/controllers/songType.controller.ts',
     'src/controllers/user.controller.ts',
     'src/middlewares/requestTiming.ts',
     'src/services/media.service.ts',
@@ -33,6 +34,7 @@ for (const relativePath of changedSources) {
 
 const database = read('src/config/database.ts');
 const blogController = read('src/controllers/blog.controller.ts');
+const songTypeController = read('src/controllers/songType.controller.ts');
 const announcementController = read('src/controllers/announcement.controller.ts');
 const userController = read('src/controllers/user.controller.ts');
 const requestTiming = read('src/middlewares/requestTiming.ts');
@@ -56,6 +58,10 @@ assert.match(socket, /forwardedFor/u);
 assert.match(logger, /void Log\.create/u);
 assert.match(notificationHelper, /void deliverCommunityNotification/u);
 assert.match(blogController, /await post\.populate\('author'/u);
+assert.match(songTypeController, /serializeSongType/u);
+assert.match(songTypeController, /parentId: songType\.parentId\?\.toString\(\) \?\? null/u);
+assert.match(songTypeController, /input\.parentId !== undefined/u);
+assert.doesNotMatch(songTypeController, /populate\('parentId'/u);
 assert.match(announcementController, /await announcement\.populate\('createdBy'/u);
 assert.match(announcementController, /await announcement\.populate\('updatedBy'/u);
 assert.match(userController, /\.limit\(500\)/u);
