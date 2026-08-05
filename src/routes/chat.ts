@@ -4,6 +4,7 @@ import express from 'express';
 import {
     createChatMessageController,
     listChatHistoryController,
+    markChatReceiptsController,
     toggleChatReactionController,
     uploadChatFileController,
     uploadChatImageController,
@@ -20,6 +21,7 @@ const router = express.Router();
 
 router.get(['/', '/history'], verifyTenantToken, listChatHistoryController);
 router.post('/', verifyTenantToken, createChatMessageController);
+router.patch('/receipts', verifyTenantToken, markChatReceiptsController);
 router.post(
     '/upload-image',
     verifyTenantToken,
