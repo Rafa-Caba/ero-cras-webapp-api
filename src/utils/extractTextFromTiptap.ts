@@ -1,30 +1,39 @@
-export const extractTextFromTiptap = (content: any): string => {
-    if (typeof content === 'string') return content;
+// src/utils/extractTextFromTiptap.ts
 
-    if (!content || typeof content !== 'object') return '';
+import type { TipTapContent, TipTapNode } from '../types/tiptap.types';
 
-    let text = '';
+const appendNodeText = (nodes: readonly TipTapNode[], chunks: string[]): void => {
+    for (const node of nodes) {
+        if (node.type === 'text' && node.text) {
+            chunks.push(node.text);
+            continue;
+        }
 
-    const traverse = (nodes: any[]) => {
-        if (!Array.isArray(nodes)) return;
+        if (node.type === 'hardBreak') {
+            chunks.push('\n');
+            continue;
+        }
 
-        nodes.forEach((node) => {
-            if (node.type === 'text' && typeof node.text === 'string') {
-                text += node.text;
-            } else if (node.type === 'hardBreak') {
-                text += '\n';
-            } else if (node.content) {
-                traverse(node.content);
-                if (node.type === 'paragraph' || node.type === 'heading') {
-                    text += '\n';
-                }
+        if (node.content) {
+            appendNodeText(node.content, chunks);
+
+            if (node.type === 'paragraph' || node.type === 'heading') {
+                chunks.push('\n');
             }
-        });
-    };
+        }
+    }
+};
 
-    if (content.content) {
-        traverse(content.content);
+export const extractTextFromTiptap = (content: TipTapContent): string => {
+    if (typeof content === 'string') {
+        return content;
     }
 
-    return text.trim() || 'Sent a message';
+    if (!content?.content) {
+        return '';
+    }
+
+    const chunks: string[] = [];
+    appendNodeText(content.content, chunks);
+    return chunks.join('').trim() || 'Sent a message';
 };
