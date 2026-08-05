@@ -133,6 +133,7 @@ export const createBlogPostController = async (
         );
     }
 
+    await post.populate('author', 'name username imageUrl');
     res.status(201).json(post);
 };
 
@@ -197,6 +198,7 @@ export const updateBlogPostController = async (
         changes: { before, after: post.toObject() }
     });
 
+    await post.populate('author', 'name username imageUrl');
     res.json(post);
 };
 

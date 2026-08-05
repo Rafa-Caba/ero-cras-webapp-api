@@ -58,10 +58,13 @@ export const getAnnouncementController = async (
     req: RequestWithUser & { params: ResourceParams },
     res: Response
 ): Promise<void> => {
-    res.json(await findAnnouncement(
+    const announcement = await findAnnouncement(
         req.params.id,
         requireEffectiveChoirObjectId(req)
-    ));
+    );
+    await announcement.populate('createdBy', 'name username');
+    await announcement.populate('updatedBy', 'name username');
+    res.json(announcement);
 };
 
 export const createAnnouncementController = async (
@@ -129,6 +132,8 @@ export const createAnnouncementController = async (
         );
     }
 
+    await announcement.populate('createdBy', 'name username');
+    await announcement.populate('updatedBy', 'name username');
     res.status(201).json(announcement);
 };
 
@@ -198,6 +203,8 @@ export const updateAnnouncementController = async (
         changes: { before, after: announcement.toObject() }
     });
 
+    await announcement.populate('createdBy', 'name username');
+    await announcement.populate('updatedBy', 'name username');
     res.json(announcement);
 };
 

@@ -225,7 +225,9 @@ export const listDirectoryController = async (
     const choirId = requireEffectiveChoirObjectId(req);
     const users = await User.find({ choirId, isActive: true })
         .select('name username imageUrl role')
-        .sort({ name: 1 });
+        .sort({ name: 1 })
+        .limit(500)
+        .maxTimeMS(5_000);
 
     res.json({
         users: users.map((user) => ({

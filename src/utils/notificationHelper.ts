@@ -82,7 +82,7 @@ export const notifyCommunity = async (
     category: CommunityNotificationCategory,
     item: CommunityNotificationItem
 ): Promise<void> => {
-    await deliverCommunityNotification(
+    void deliverCommunityNotification(
         choirId,
         senderId,
         senderName,

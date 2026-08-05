@@ -68,31 +68,30 @@ export const registerLog = async ({
 
     const normalizedOperation = operation ?? `${normalizeOperationPart(collection)}.${action}`;
 
-    try {
-        await Log.create({
-            user: new Types.ObjectId(currentUser.id),
-            actorUserId: new Types.ObjectId(currentUser.id),
-            actorRole: currentUser.role,
-            choirId: new Types.ObjectId(effectiveChoirId),
-            targetChoirId: new Types.ObjectId(effectiveChoirId),
-            targetUserId: targetUserId && Types.ObjectId.isValid(targetUserId)
-                ? new Types.ObjectId(targetUserId)
-                : null,
-            collectionName: collection,
-            action,
-            operation: normalizedOperation,
-            referenceId: new Types.ObjectId(referenceId),
-            description,
-            before,
-            after,
-            changes,
-            ipAddress: req.ip ?? '',
-            userAgent: readHeader(req.headers['user-agent']),
-            deviceId: readHeader(req.headers['x-device-id']),
-            timestamp: new Date()
-        });
-    } catch (error) {
-        const message = error instanceof Error ? error.message : 'Audit log write failed';
-        console.error(`Audit log write failed: ${message}`);
-    }
+    const logDocument = {
+        user: new Types.ObjectId(currentUser.id),
+        actorUserId: new Types.ObjectId(currentUser.id),
+        actorRole: currentUser.role,
+        choirId: new Types.ObjectId(effectiveChoirId),
+        targetChoirId: new Types.ObjectId(effectiveChoirId),
+        targetUserId: targetUserId && Types.ObjectId.isValid(targetUserId)
+            ? new Types.ObjectId(targetUserId)
+            : null,
+        collectionName: collection,
+        action,
+        operation: normalizedOperation,
+        referenceId: new Types.ObjectId(referenceId),
+        description,
+        before,
+        after,
+        changes,
+        ipAddress: req.ip ?? '',
+        userAgent: readHeader(req.headers['user-agent']),
+        deviceId: readHeader(req.headers['x-device-id']),
+        timestamp: new Date()
+    };
+
+    void Log.create(logDocument).catch((error: Error) => {
+        console.error(`Audit log write failed: ${error.message}`);
+    });
 };

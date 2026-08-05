@@ -24,7 +24,12 @@ const targets = [
     'src/types/auth.types.ts',
     'src/types/user.types.ts',
     'src/utils/logger.ts',
-    'src/validations/schemas/user.schemas.ts'
+    'src/validations/schemas/user.schemas.ts',
+    'src/config/database.ts',
+    'src/controllers/announcement.controller.ts',
+    'src/controllers/blog.controller.ts',
+    'src/middlewares/requestTiming.ts',
+    'src/utils/notificationHelper.ts',
 ];
 
 const prohibitedPatterns = [

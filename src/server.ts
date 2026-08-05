@@ -14,6 +14,7 @@ import { connectDatabase } from './config/database';
 import { env } from './config/env';
 import { isOriginAllowed } from './config/cors';
 import { errorHandler, notFoundHandler } from './middlewares/httpErrors';
+import { requestTimingMiddleware } from './middlewares/requestTiming';
 import { configuringSockets } from './socket';
 
 import authRoutes from './routes/auth';
@@ -38,6 +39,7 @@ import { startPushReceiptProcessor } from './services/expoPush.service';
 export const app: Application = express();
 
 app.set('trust proxy', 1);
+app.use(requestTimingMiddleware);
 
 app.use(cors({
     origin: (origin, callback) => {
@@ -106,8 +108,10 @@ const startServer = async (): Promise<void> => {
         InterServerEvents,
         ChoirSocketData
     >(httpServer, {
-        transports: ['websocket', 'polling'],
+        transports: ['polling', 'websocket'],
         allowUpgrades: true,
+        serveClient: false,
+        perMessageDeflate: false,
         pingInterval: 25_000,
         pingTimeout: 30_000,
         cors: {

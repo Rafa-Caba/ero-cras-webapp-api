@@ -72,9 +72,17 @@ export const configuringSockets = (io: ChoirSocketServer): void => {
     io.use(authenticateSocket);
 
     io.engine.on('connection_error', (error) => {
+        const request = error.req;
         console.warn('Socket connection error', {
             code: error.code,
-            message: error.message
+            message: error.message,
+            url: request?.url ?? null,
+            origin: request?.headers.origin ?? null,
+            upgrade: request?.headers.upgrade ?? null,
+            connection: request?.headers.connection ?? null,
+            userAgent: request?.headers['user-agent'] ?? null,
+            forwardedFor: request?.headers['x-forwarded-for'] ?? null,
+            replicaId: process.env.RAILWAY_REPLICA_ID ?? null
         });
     });
 
