@@ -55,7 +55,8 @@ const readMessageType = (value: string | undefined): MessageType => {
         'MEDIA',
         'REACTION',
         'AUDIO',
-        'VIDEO'
+        'VIDEO',
+        'STICKER'
     ];
     const messageType = allowedTypes.find(
         (allowedType) => allowedType === normalizedValue
@@ -247,7 +248,7 @@ export const parseChatMessageInput = (req: Request): ChatMessageInput => {
     const replyTo = readOptionalObjectId(body, 'replyTo') ??
         readOptionalObjectId(body, 'replyToId');
     const mediaAssetId = readOptionalObjectId(body, 'mediaAssetId');
-    const content = type === 'TEXT' || type === 'REACTION'
+    const content = type === 'TEXT' || type === 'REACTION' || type === 'STICKER'
         ? readRequiredContent(body, 'content')
         : readOptionalContent(body, 'content') ?? '';
 
