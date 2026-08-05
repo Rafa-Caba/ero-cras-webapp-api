@@ -16,6 +16,7 @@ const changedSources = [
     'src/controllers/chat.controller.ts',
     'src/controllers/songType.controller.ts',
     'src/models/ChatMessage.ts',
+    'src/models/Choir.ts',
     'src/routes/chat.ts',
     'src/validations/schemas/common.schemas.ts',
     'src/validations/schemas/resource.schemas.ts',
@@ -26,7 +27,11 @@ const changedSources = [
     'src/socket.ts',
     'src/utils/constants.ts',
     'src/utils/logger.ts',
-    'src/utils/notificationHelper.ts'
+    'src/utils/notificationHelper.ts',
+    'src/types/tiptap.types.ts',
+    'src/utils/extractTextFromTiptap.ts',
+    'src/utils/normalizeUser.ts',
+    'src/utils/populateHelpers.ts'
 ];
 
 for (const relativePath of changedSources) {
@@ -35,6 +40,7 @@ for (const relativePath of changedSources) {
     assert.doesNotMatch(source, /\bas any\b/u, `${relativePath} must not use as any`);
     assert.doesNotMatch(source, /:\s*any\b/u, `${relativePath} must not use any`);
     assert.doesNotMatch(source, /<any>/u, `${relativePath} must not use any generics`);
+    assert.doesNotMatch(source, /\bunknown\b/u, `${relativePath} must not use unknown`);
     assert.doesNotMatch(source, /@ts-ignore/u, `${relativePath} must not suppress TypeScript errors`);
 }
 
@@ -43,6 +49,7 @@ const blogController = read('src/controllers/blog.controller.ts');
 const chatController = read('src/controllers/chat.controller.ts');
 const chatModel = read('src/models/ChatMessage.ts');
 const chatRoutes = read('src/routes/chat.ts');
+const choirModel = read('src/models/Choir.ts');
 const constants = read('src/utils/constants.ts');
 const songTypeController = read('src/controllers/songType.controller.ts');
 const announcementController = read('src/controllers/announcement.controller.ts');
@@ -94,6 +101,11 @@ assert.match(chatController, /readBy: \[actorUserId\]/u);
 assert.match(chatModel, /deliveredTo/u);
 assert.match(chatModel, /readBy/u);
 assert.match(chatModel, /'STICKER'/u);
+assert.match(chatModel, /const ChatMessage = model<IChatMessage>\('ChatMessage'/u);
+assert.match(choirModel, /export interface IChoir/u);
+assert.match(choirModel, /export const normalizeChoirCode/u);
+assert.match(choirModel, /const Choir = model<IChoir>\('Choir'/u);
+assert.doesNotMatch(choirModel, /model<IChatMessage>\('ChatMessage'/u);
 assert.match(chatRoutes, /'\/receipts'/u);
 assert.match(constants, /'STICKER'/u);
 
