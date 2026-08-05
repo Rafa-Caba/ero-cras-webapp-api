@@ -102,14 +102,20 @@ const startServer = async (): Promise<void> => {
     await connectDatabase();
 
     const httpServer = http.createServer(app);
+    httpServer.keepAliveTimeout = 75_000;
+    httpServer.headersTimeout = 80_000;
+    httpServer.requestTimeout = 120_000;
+
     const io = new SocketIOServer<
         ClientToServerEvents,
         ServerToClientEvents,
         InterServerEvents,
         ChoirSocketData
     >(httpServer, {
+        path: '/socket.io',
         transports: ['polling', 'websocket'],
         allowUpgrades: true,
+        connectTimeout: 45_000,
         serveClient: false,
         perMessageDeflate: false,
         pingInterval: 25_000,

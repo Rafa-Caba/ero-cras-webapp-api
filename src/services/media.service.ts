@@ -172,6 +172,36 @@ const uploadBuffer = (
     });
 };
 
+
+export interface PlatformProfileMediaReference {
+    readonly url: string;
+    readonly publicId: string;
+    readonly resourceType: MediaResourceType;
+}
+
+export const uploadPlatformProfileMedia = async (
+    file: Express.Multer.File,
+    userId: Types.ObjectId
+): Promise<PlatformProfileMediaReference> => {
+    const result = await uploadBuffer(
+        file,
+        `${env.cloudinary.baseFolder}/platform/users/${userId.toString()}/profile`
+    );
+
+    return {
+        url: result.secure_url,
+        publicId: result.public_id,
+        resourceType: normalizeResourceType(result.resource_type)
+    };
+};
+
+export const deleteCloudinaryMedia = async (
+    publicId: string,
+    resourceType: MediaResourceType
+): Promise<void> => {
+    await destroyCloudinaryResource(publicId, resourceType);
+};
+
 const destroyCloudinaryResource = async (
     publicId: string,
     resourceType: MediaResourceType

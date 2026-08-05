@@ -5,8 +5,10 @@ import { Types, type FilterQuery } from 'mongoose';
 import { AppError } from '../errors/AppError';
 import {
     attachMediaAsset,
+    deleteCloudinaryMedia,
     deleteOwnedMedia,
     discardPendingMedia,
+    uploadPlatformProfileMedia,
     uploadTenantMedia
 } from '../services/media.service';
 import Theme from '../models/Theme';
@@ -133,43 +135,77 @@ export const updateOwnProfileController = async (
     const input = parseUpdateProfileInput(req);
     const before = serializeUser(user);
     const previousAssetId = user.imageAssetId;
-    const uploaded = req.file
+    const previousPublicId = user.imagePublicId;
+    const previousResourceType = user.imageResourceType ?? 'image';
+    const isPlatformProfile = user.role === 'SUPER_ADMIN' && !user.choirId;
+    const tenantUploaded = req.file && !isPlatformProfile
         ? await uploadProfileImage(req.file, user.choirId, user._id)
         : null;
+    const platformUploaded = req.file && isPlatformProfile
+        ? await uploadPlatformProfileMedia(req.file, user._id)
+        : null;
 
-    if (uploaded) {
-        user.imageUrl = uploaded.media.url;
-        user.imagePublicId = uploaded.media.publicId;
-        user.imageResourceType = uploaded.media.resourceType;
-        user.imageAssetId = uploaded.asset._id;
+    if (tenantUploaded) {
+        user.imageUrl = tenantUploaded.media.url;
+        user.imagePublicId = tenantUploaded.media.publicId;
+        user.imageResourceType = tenantUploaded.media.resourceType;
+        user.imageAssetId = tenantUploaded.asset._id;
+    }
+
+    if (platformUploaded) {
+        user.imageUrl = platformUploaded.url;
+        user.imagePublicId = platformUploaded.publicId;
+        user.imageResourceType = platformUploaded.resourceType;
+        user.imageAssetId = null;
     }
 
     const updatedUser = await updateOwnProfile(user, input).catch(
         async (error: Error) => {
-            if (uploaded) {
+            if (tenantUploaded) {
                 await discardPendingMedia(
-                    uploaded.asset._id,
-                    uploaded.asset.choirId,
+                    tenantUploaded.asset._id,
+                    tenantUploaded.asset.choirId,
                     'Profile update failed'
                 );
+            }
+
+            if (platformUploaded) {
+                await deleteCloudinaryMedia(
+                    platformUploaded.publicId,
+                    platformUploaded.resourceType
+                ).catch(() => undefined);
             }
             throw error;
         }
     );
 
-    if (uploaded) {
+    if (tenantUploaded) {
         await attachMediaAsset(
-            uploaded.asset._id,
-            uploaded.asset.choirId,
+            tenantUploaded.asset._id,
+            tenantUploaded.asset.choirId,
             'USER',
             user._id
         );
         await deleteOwnedMedia({
             assetId: previousAssetId,
-            choirId: uploaded.asset.choirId,
+            choirId: tenantUploaded.asset.choirId,
             ownerType: 'USER',
             ownerId: user._id
         });
+    }
+
+    if (
+        platformUploaded &&
+        previousPublicId &&
+        previousPublicId !== platformUploaded.publicId
+    ) {
+        deleteCloudinaryMedia(previousPublicId, previousResourceType)
+            .catch((error: Error) => {
+                console.warn('Previous platform profile image cleanup failed', {
+                    userId: user.id,
+                    message: error.message
+                });
+            });
     }
 
     const after = serializeUser(updatedUser);
