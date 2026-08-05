@@ -23,7 +23,8 @@ import { notifyCommunity } from '../utils/notificationHelper';
 import {
     parseObjectId,
     parseRequestBody,
-    readRequiredString
+    readRequiredString,
+    readRequiredStringArray
 } from '../validations/schemas/common.schemas';
 import { parseChatMessageInput } from '../validations/schemas/resource.schemas';
 import { parseSyncQuery } from '../validations/schemas/sync.schemas';
@@ -40,10 +41,35 @@ interface ChatUploadResponse {
 }
 
 type ReactionLogAction = 'add_reaction' | 'remove_reaction';
+type ChatReceiptStatus = 'DELIVERED' | 'READ';
+
+interface ChatReceiptInput {
+    readonly messageIds: readonly string[];
+    readonly status: ChatReceiptStatus;
+}
 
 const getSocketServer = (req: RequestWithUser): ChoirSocketServer | undefined => {
     const io: ChoirSocketServer | undefined = req.app.get('io');
     return io;
+};
+
+
+const parseChatReceiptInput = (req: RequestWithUser): ChatReceiptInput => {
+    const body = parseRequestBody(req);
+    const statusValue = readRequiredString(body, 'status').toUpperCase();
+
+    if (statusValue !== 'DELIVERED' && statusValue !== 'READ') {
+        throw new AppError(
+            400,
+            'INVALID_CHAT_RECEIPT_STATUS',
+            'status must be DELIVERED or READ'
+        );
+    }
+
+    return {
+        messageIds: readRequiredStringArray(body, 'messageIds', 100),
+        status: statusValue
+    };
 };
 
 const populateMessage = async (message: IChatMessage): Promise<IChatMessage> => {
@@ -181,7 +207,7 @@ export const createChatMessageController = async (
     const input = parseChatMessageInput(req);
     const actorUserId = requireAuthenticatedUserId(req);
     const choirId = requireEffectiveChoirObjectId(req);
-    const requiresMedia = input.type !== 'TEXT' && input.type !== 'REACTION';
+    const requiresMedia = ['IMAGE', 'FILE', 'MEDIA', 'AUDIO', 'VIDEO'].includes(input.type);
 
     if (requiresMedia && !input.mediaAssetId) {
         throw new AppError(
@@ -230,7 +256,9 @@ export const createChatMessageController = async (
         author: actorUserId,
         createdBy: actorUserId,
         choirId,
-        reactions: []
+        reactions: [],
+        deliveredTo: [actorUserId],
+        readBy: [actorUserId]
     }).catch(async (error: Error) => {
         if (asset) {
             await discardPendingMedia(asset._id, choirId, 'Chat message creation failed');
@@ -262,6 +290,48 @@ export const createChatMessageController = async (
     );
 
     res.status(201).json({ message });
+};
+
+export const markChatReceiptsController = async (
+    req: RequestWithUser,
+    res: Response
+): Promise<void> => {
+    const input = parseChatReceiptInput(req);
+    const choirId = requireEffectiveChoirObjectId(req);
+    const actorUserId = requireAuthenticatedUserId(req);
+    const messageIds = input.messageIds.map((messageId) =>
+        parseObjectId(messageId, 'messageIds')
+    );
+    const filters: FilterQuery<IChatMessage> = {
+        _id: { $in: messageIds },
+        choirId,
+        author: { $ne: actorUserId }
+    };
+
+    if (input.status === 'READ') {
+        await ChatMessage.updateMany(filters, {
+            $addToSet: {
+                deliveredTo: actorUserId,
+                readBy: actorUserId
+            }
+        });
+    } else {
+        await ChatMessage.updateMany(filters, {
+            $addToSet: { deliveredTo: actorUserId }
+        });
+    }
+
+    const messages = await ChatMessage.find({
+        _id: { $in: messageIds },
+        choirId
+    });
+
+    for (const message of messages) {
+        await populateMessage(message);
+        emitMessage(req, 'message-updated', message);
+    }
+
+    res.json({ messages });
 };
 
 export const uploadChatImageController = async (
