@@ -116,6 +116,7 @@ ChatMessageSchema.pre('validate', async function validateTenantRelations(this: I
 
 ChatMessageSchema.index({ choirId: 1, createdAt: -1 });
 ChatMessageSchema.index({ choirId: 1, author: 1, createdAt: -1 });
+ChatMessageSchema.index({ choirId: 1, type: 1, createdAt: -1 });
 ChatMessageSchema.index({ choirId: 1, replyTo: 1 });
 
 const ChatMessage = model<IChatMessage>('ChatMessage', ChatMessageSchema);

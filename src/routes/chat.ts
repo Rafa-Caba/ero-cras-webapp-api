@@ -4,6 +4,7 @@ import express from 'express';
 import {
     createChatMessageController,
     listChatHistoryController,
+    listChatMediaController,
     markChatReceiptsController,
     toggleChatReactionController,
     uploadChatFileController,
@@ -19,6 +20,7 @@ import {
 
 const router = express.Router();
 
+router.get('/media', verifyTenantToken, listChatMediaController);
 router.get(['/', '/history'], verifyTenantToken, listChatHistoryController);
 router.post('/', verifyTenantToken, createChatMessageController);
 router.patch('/receipts', verifyTenantToken, markChatReceiptsController);

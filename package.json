@@ -17,7 +17,7 @@
     "verify:phase-9-10": "npm run typecheck && npm run build",
     "verify:phase-11-13": "npm run typecheck && npm run build",
     "lint": "node scripts/lint-phase-14-16.mjs",
-    "test": "node scripts/phase-14-16.test.mjs && node scripts/phase-17-18.test.mjs && node scripts/production-regressions.test.mjs",
+    "test": "node scripts/phase-14-16.test.mjs && node scripts/phase-17-18.test.mjs && node scripts/production-regressions.test.mjs && node scripts/media-storage-regressions.test.mjs",
     "verify:phase-14-16": "npm run typecheck && npm run build && npm run lint && npm test",
     "verify:qa": "npm run verify:phase-17-18",
     "verify:phase-17-18": "npm run typecheck && npm run build && npm run lint && npm test",

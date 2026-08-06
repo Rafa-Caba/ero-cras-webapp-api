@@ -1,7 +1,7 @@
 // src/controllers/chat.controller.ts
 
 import type { Response } from 'express';
-import type { FilterQuery } from 'mongoose';
+import type { FilterQuery, PopulateOptions } from 'mongoose';
 import { AppError } from '../errors/AppError';
 import { buildUpdatedSinceFilter, sendCacheableJson } from '../services/httpCache.service';
 import ChatMessage, { type IChatMessage, type MessageType } from '../models/ChatMessage';
@@ -72,14 +72,25 @@ const parseChatReceiptInput = (req: RequestWithUser): ChatReceiptInput => {
     };
 };
 
+const chatMediaPopulate: PopulateOptions = {
+    path: 'mediaAssetId',
+    select: 'url originalName mimeType bytes format resourceType'
+};
+
+const replyPopulate: PopulateOptions = {
+    path: 'replyTo',
+    populate: [
+        { path: 'author', select: 'name username imageUrl' },
+        chatMediaPopulate
+    ]
+};
+
 const populateMessage = async (message: IChatMessage): Promise<IChatMessage> => {
     await message.populate([
         { path: 'author', select: 'name username imageUrl' },
         { path: 'reactions.user', select: 'username name imageUrl' },
-        {
-            path: 'replyTo',
-            populate: { path: 'author', select: 'name username imageUrl' }
-        }
+        replyPopulate,
+        chatMediaPopulate
     ]);
     return message;
 };
@@ -192,12 +203,57 @@ export const listChatHistoryController = async (
         .limit(limit)
         .populate('author', 'name username imageUrl')
         .populate('reactions.user', 'username name imageUrl')
-        .populate({
-            path: 'replyTo',
-            populate: { path: 'author', select: 'name username imageUrl' }
-        });
+        .populate(replyPopulate)
+        .populate(chatMediaPopulate);
 
     sendCacheableJson(req, res, messages.reverse(), syncStartedAt);
+};
+
+export const listChatMediaController = async (
+    req: RequestWithUser,
+    res: Response
+): Promise<void> => {
+    const choirId = requireEffectiveChoirObjectId(req);
+    const syncStartedAt = new Date();
+    const { updatedSince } = parseSyncQuery(req);
+    const limitValue = typeof req.query.limit === 'string'
+        ? Number(req.query.limit)
+        : 100;
+    const limit = Number.isInteger(limitValue) && limitValue > 0
+        ? Math.min(limitValue, 200)
+        : 100;
+    const beforeValue = typeof req.query.before === 'string'
+        ? req.query.before
+        : undefined;
+    const filters: FilterQuery<IChatMessage> = {
+        choirId,
+        type: { $in: ['IMAGE', 'FILE', 'MEDIA', 'AUDIO', 'VIDEO'] },
+        ...buildUpdatedSinceFilter(updatedSince)
+    };
+
+    if (beforeValue) {
+        const before = new Date(beforeValue);
+
+        if (Number.isNaN(before.getTime())) {
+            throw new AppError(
+                400,
+                'INVALID_BEFORE_DATE',
+                'before must be a valid date'
+            );
+        }
+
+        filters.createdAt = { $lt: before };
+    }
+
+    const messages = await ChatMessage.find(filters)
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .populate('author', 'name username imageUrl')
+        .populate('reactions.user', 'username name imageUrl')
+        .populate(replyPopulate)
+        .populate(chatMediaPopulate);
+
+    sendCacheableJson(req, res, messages, syncStartedAt);
 };
 
 export const createChatMessageController = async (
