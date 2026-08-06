@@ -24,6 +24,11 @@ export interface ChatReaction {
     user: Types.ObjectId;
 }
 
+export interface ChatReceiptEntry {
+    user: Types.ObjectId;
+    at: Date;
+}
+
 export interface IChatMessage extends Document<Types.ObjectId> {
     author: Types.ObjectId;
     choirId: Types.ObjectId;
@@ -38,12 +43,23 @@ export interface IChatMessage extends Document<Types.ObjectId> {
     mediaAssetId?: Types.ObjectId | null;
     reactions: ChatReaction[];
     replyTo?: Types.ObjectId | null;
+    recipientUserIds: Types.ObjectId[];
     deliveredTo: Types.ObjectId[];
     readBy: Types.ObjectId[];
+    deliveryReceipts: ChatReceiptEntry[];
+    readReceipts: ChatReceiptEntry[];
     createdBy: Types.ObjectId;
     createdAt: Date;
     updatedAt: Date;
 }
+
+const receiptEntrySchema = new Schema<ChatReceiptEntry>(
+    {
+        user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        at: { type: Date, required: true }
+    },
+    { _id: false }
+);
 
 const ChatMessageSchema = new Schema<IChatMessage>(
     {
@@ -77,8 +93,11 @@ const ChatMessageSchema = new Schema<IChatMessage>(
             ref: 'ChatMessage',
             default: null
         },
+        recipientUserIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
         deliveredTo: [{ type: Schema.Types.ObjectId, ref: 'User' }],
         readBy: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+        deliveryReceipts: { type: [receiptEntrySchema], default: [] },
+        readReceipts: { type: [receiptEntrySchema], default: [] },
         createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true }
     },
     {
@@ -98,8 +117,21 @@ ChatMessageSchema.pre('validate', async function validateTenantRelations(this: I
         this.choirId,
         'reactions.user'
     );
+    await assertSameChoirRelations(User, this.recipientUserIds, this.choirId, 'recipientUserIds');
     await assertSameChoirRelations(User, this.deliveredTo, this.choirId, 'deliveredTo');
     await assertSameChoirRelations(User, this.readBy, this.choirId, 'readBy');
+    await assertSameChoirRelations(
+        User,
+        this.deliveryReceipts.map((receipt) => receipt.user),
+        this.choirId,
+        'deliveryReceipts.user'
+    );
+    await assertSameChoirRelations(
+        User,
+        this.readReceipts.map((receipt) => receipt.user),
+        this.choirId,
+        'readReceipts.user'
+    );
 
     if (!this.replyTo) {
         return;
@@ -118,6 +150,7 @@ ChatMessageSchema.index({ choirId: 1, createdAt: -1 });
 ChatMessageSchema.index({ choirId: 1, author: 1, createdAt: -1 });
 ChatMessageSchema.index({ choirId: 1, type: 1, createdAt: -1 });
 ChatMessageSchema.index({ choirId: 1, replyTo: 1 });
+ChatMessageSchema.index({ choirId: 1, recipientUserIds: 1, createdAt: -1 });
 
 const ChatMessage = model<IChatMessage>('ChatMessage', ChatMessageSchema);
 export default ChatMessage;

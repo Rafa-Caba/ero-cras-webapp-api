@@ -3,6 +3,7 @@
 import express from 'express';
 import {
     createChatMessageController,
+    getChatMessageDetailsController,
     listChatHistoryController,
     listChatMediaController,
     markChatReceiptsController,
@@ -24,6 +25,7 @@ router.get('/media', verifyTenantToken, listChatMediaController);
 router.get(['/', '/history'], verifyTenantToken, listChatHistoryController);
 router.post('/', verifyTenantToken, createChatMessageController);
 router.patch('/receipts', verifyTenantToken, markChatReceiptsController);
+router.get('/:messageId/details', verifyTenantToken, getChatMessageDetailsController);
 router.post(
     '/upload-image',
     verifyTenantToken,

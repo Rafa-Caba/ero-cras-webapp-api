@@ -16,6 +16,7 @@ const initializeSocketConnection = async (
     const choirRoom = getSocketChoirRoom(user.choirId);
 
     await socket.join(choirRoom);
+    await socket.join(`user:${user.id}`);
     registerSocketConnection(socket);
 
     console.info('Socket connected', {

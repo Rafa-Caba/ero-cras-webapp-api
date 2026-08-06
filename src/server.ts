@@ -34,6 +34,7 @@ import instrumentsRouter from './routes/instruments';
 import publicRoutes from './routes/public';
 import mediaRoutes from './routes/media';
 import pushDeviceRoutes from './routes/pushDevice';
+import notificationRoutes from './routes/notification';
 import { startPushReceiptProcessor } from './services/expoPush.service';
 
 export const app: Application = express();
@@ -94,6 +95,7 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/instruments', instrumentsRouter);
 app.use('/api/media', mediaRoutes);
 app.use('/api/push-devices', pushDeviceRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

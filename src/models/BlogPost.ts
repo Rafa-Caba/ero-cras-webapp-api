@@ -7,7 +7,9 @@ import type { MediaResourceType } from '../types/media.types';
 import User from './User';
 
 export interface BlogComment {
+    _id?: Types.ObjectId;
     author: string;
+    authorUserId?: Types.ObjectId | null;
     text: StoredJsonValue;
     date: Date;
 }
@@ -51,6 +53,7 @@ const BlogPostSchema = new Schema<IBlogPost>(
         comments: [
             {
                 author: { type: String, required: true, trim: true },
+                authorUserId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
                 text: { type: Schema.Types.Mixed, required: true },
                 date: { type: Date, default: Date.now }
             }
@@ -69,6 +72,14 @@ const BlogPostSchema = new Schema<IBlogPost>(
 BlogPostSchema.pre('validate', async function validateTenantRelations(this: IBlogPost): Promise<void> {
     await assertSameChoirRelation(User, this.author, this.choirId, 'author');
     await assertSameChoirRelations(User, this.likesUsers, this.choirId, 'likesUsers');
+    await assertSameChoirRelations(
+        User,
+        this.comments
+            .map((comment) => comment.authorUserId)
+            .filter((authorUserId): authorUserId is Types.ObjectId => Boolean(authorUserId)),
+        this.choirId,
+        'comments.authorUserId'
+    );
 });
 
 BlogPostSchema.index({ choirId: 1, createdAt: -1 });

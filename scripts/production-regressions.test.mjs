@@ -14,21 +14,28 @@ const changedSources = [
     'src/controllers/announcement.controller.ts',
     'src/controllers/blog.controller.ts',
     'src/controllers/chat.controller.ts',
+    'src/controllers/notification.controller.ts',
     'src/controllers/songType.controller.ts',
     'src/models/ChatMessage.ts',
+    'src/models/BlogPost.ts',
+    'src/models/Notification.ts',
     'src/models/Choir.ts',
     'src/routes/chat.ts',
+    'src/routes/notification.ts',
     'src/validations/schemas/common.schemas.ts',
     'src/validations/schemas/resource.schemas.ts',
     'src/controllers/user.controller.ts',
     'src/middlewares/requestTiming.ts',
     'src/services/media.service.ts',
+    'src/services/notification.service.ts',
     'src/server.ts',
+    'src/services/indexSync.service.ts',
     'src/socket.ts',
     'src/utils/constants.ts',
     'src/utils/logger.ts',
     'src/utils/notificationHelper.ts',
     'src/types/tiptap.types.ts',
+    'src/types/notification.types.ts',
     'src/utils/extractTextFromTiptap.ts',
     'src/utils/normalizeUser.ts',
     'src/utils/populateHelpers.ts'
@@ -60,6 +67,14 @@ const socket = read('src/socket.ts');
 const logger = read('src/utils/logger.ts');
 const notificationHelper = read('src/utils/notificationHelper.ts');
 const mediaService = read('src/services/media.service.ts');
+
+const notificationController = read('src/controllers/notification.controller.ts');
+const notificationModel = read('src/models/Notification.ts');
+const notificationRoutes = read('src/routes/notification.ts');
+const notificationService = read('src/services/notification.service.ts');
+const notificationTypes = read('src/types/notification.types.ts');
+const indexSync = read('src/services/indexSync.service.ts');
+const blogModel = read('src/models/BlogPost.ts');
 const commonSchemas = read('src/validations/schemas/common.schemas.ts');
 const resourceSchemas = read('src/validations/schemas/resource.schemas.ts');
 
@@ -107,6 +122,33 @@ assert.match(choirModel, /export const normalizeChoirCode/u);
 assert.match(choirModel, /const Choir = model<IChoir>\('Choir'/u);
 assert.doesNotMatch(choirModel, /model<IChatMessage>\('ChatMessage'/u);
 assert.match(chatRoutes, /'\/receipts'/u);
+
+assert.match(chatController, /getChatMessageDetailsController/u);
+assert.match(chatController, /recipientUserIds/u);
+assert.match(chatController, /deliveryReceipts/u);
+assert.match(chatController, /readReceipts/u);
+assert.match(chatController, /findActiveChoirRecipientIds/u);
+assert.match(chatController, /CHAT_REACTION/u);
+assert.match(chatModel, /recipientUserIds/u);
+assert.match(chatModel, /deliveryReceipts/u);
+assert.match(chatModel, /readReceipts/u);
+assert.match(chatRoutes, /\/:messageId\/details/u);
+assert.match(notificationTypes, /BLOG_REACTION/u);
+assert.match(notificationModel, /notification_recipient_dedupe_unique/u);
+assert.match(notificationService, /createChoirNotifications/u);
+assert.match(notificationService, /user:\$\{notification\.recipientUserId/u);
+assert.match(notificationController, /markNotificationsReadController/u);
+assert.match(notificationRoutes, /\/read-all/u);
+assert.match(server, /\/api\/notifications/u);
+assert.match(indexSync, /Notification\.syncIndexes/u);
+assert.match(blogController, /BLOG_COMMENT/u);
+assert.match(blogController, /BLOG_REACTION/u);
+assert.match(blogModel, /authorUserId/u);
+assert.match(socket, /user:\$\{user\.id\}/u);
+assert.match(chatController, /author: actorUserId/u);
+assert.match(notificationService, /removeResourceNotifications/u);
+assert.match(notificationService, /\$set:\s*\{/u);
+assert.match(blogController, /removeResourceNotifications/u);
 assert.match(constants, /'STICKER'/u);
 
 console.log('Production and performance regression API contract tests passed.');

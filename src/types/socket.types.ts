@@ -27,6 +27,11 @@ export interface SocketTypingEvent {
     readonly isTyping: boolean;
 }
 
+export interface SocketNotificationRemoval {
+    readonly id: string;
+    readonly dedupeKey: string;
+}
+
 export interface SocketDisconnectNotice {
     readonly code: string;
     readonly message: string;
@@ -41,6 +46,9 @@ export interface ServerToClientEvents {
     readonly 'user-typing': (payload: SocketTypingEvent) => void;
     readonly 'new-message': (message: object) => void;
     readonly 'message-updated': (message: object) => void;
+    readonly 'notification-created': (notification: object) => void;
+    readonly 'notification-removed': (payload: SocketNotificationRemoval) => void;
+    readonly 'notifications-read': () => void;
     readonly 'session-disconnected': (notice: SocketDisconnectNotice) => void;
 }
 

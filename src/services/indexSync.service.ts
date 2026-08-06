@@ -9,6 +9,7 @@ import Instrument from '../models/Instrument';
 import Log from '../models/Log';
 import Member from '../models/Member';
 import MediaAsset from '../models/MediaAsset';
+import Notification from '../models/Notification';
 import PlatformState from '../models/PlatformState';
 import RefreshToken from '../models/RefreshToken';
 import PushDevice from '../models/PushDevice';
@@ -35,6 +36,7 @@ export const syncApplicationIndexes = async (): Promise<readonly IndexSyncResult
         Log.syncIndexes(),
         Member.syncIndexes(),
         MediaAsset.syncIndexes(),
+        Notification.syncIndexes(),
         PlatformState.syncIndexes(),
         RefreshToken.syncIndexes(),
         PushDevice.syncIndexes(),
@@ -56,6 +58,7 @@ export const syncApplicationIndexes = async (): Promise<readonly IndexSyncResult
         Log.modelName,
         Member.modelName,
         MediaAsset.modelName,
+        Notification.modelName,
         PlatformState.modelName,
         RefreshToken.modelName,
         PushDevice.modelName,

@@ -2,15 +2,27 @@
 
 import type { Response } from 'express';
 import type { FilterQuery, PopulateOptions } from 'mongoose';
+import { Types } from 'mongoose';
 import { AppError } from '../errors/AppError';
+import ChatMessage, {
+    type ChatReceiptEntry,
+    type IChatMessage,
+    type MessageType
+} from '../models/ChatMessage';
+import User from '../models/User';
 import { buildUpdatedSinceFilter, sendCacheableJson } from '../services/httpCache.service';
-import ChatMessage, { type IChatMessage, type MessageType } from '../models/ChatMessage';
 import {
     attachMediaAsset,
     discardPendingMedia,
     getPendingMediaAsset,
     uploadTenantMedia
 } from '../services/media.service';
+import {
+    createNotifications,
+    findActiveChoirRecipientIds,
+    markNotificationResourcesRead,
+    removeNotification
+} from '../services/notification.service';
 import {
     requireAuthenticatedUserId,
     requireEffectiveChoirId,
@@ -29,6 +41,10 @@ import {
 import { parseChatMessageInput } from '../validations/schemas/resource.schemas';
 import { parseSyncQuery } from '../validations/schemas/sync.schemas';
 
+interface PopulatedAuthorReference {
+    readonly _id: Types.ObjectId;
+}
+
 interface ChatMessageParams {
     readonly messageId: string;
 }
@@ -42,17 +58,29 @@ interface ChatUploadResponse {
 
 type ReactionLogAction = 'add_reaction' | 'remove_reaction';
 type ChatReceiptStatus = 'DELIVERED' | 'READ';
+type MessageRecipientStatus = 'READ' | 'DELIVERED' | 'PENDING';
 
 interface ChatReceiptInput {
     readonly messageIds: readonly string[];
     readonly status: ChatReceiptStatus;
 }
 
+interface MessageRecipientDetail {
+    readonly user: {
+        readonly id: string;
+        readonly name: string;
+        readonly username: string;
+        readonly imageUrl: string;
+    };
+    readonly status: MessageRecipientStatus;
+    readonly deliveredAt: string | null;
+    readonly readAt: string | null;
+}
+
 const getSocketServer = (req: RequestWithUser): ChoirSocketServer | undefined => {
     const io: ChoirSocketServer | undefined = req.app.get('io');
     return io;
 };
-
 
 const parseChatReceiptInput = (req: RequestWithUser): ChatReceiptInput => {
     const body = parseRequestBody(req);
@@ -163,6 +191,82 @@ const uploadChatAsset = async (
     };
 };
 
+const getChatNotificationBody = (
+    type: MessageType,
+    content: IChatMessage['content'],
+    filename: string
+): string => {
+    if (type === 'TEXT' && typeof content === 'string') {
+        return content.trim() || 'Nuevo mensaje';
+    }
+
+    switch (type) {
+        case 'IMAGE':
+            return '📷 Foto';
+        case 'VIDEO':
+        case 'MEDIA':
+            return '🎥 Video';
+        case 'AUDIO':
+            return '🎤 Nota de voz';
+        case 'FILE':
+            return filename ? `📎 ${filename}` : '📎 Archivo';
+        case 'STICKER':
+            return typeof content === 'string' ? content : '✨ Sticker';
+        case 'REACTION':
+            return 'Reacción';
+        case 'TEXT':
+            return 'Nuevo mensaje';
+    }
+};
+
+const hasObjectId = (
+    values: readonly Types.ObjectId[],
+    value: Types.ObjectId
+): boolean => values.some((item) => item.equals(value));
+
+const hasReceipt = (
+    receipts: readonly ChatReceiptEntry[],
+    userId: Types.ObjectId
+): boolean => receipts.some((receipt) => receipt.user.equals(userId));
+
+const ensureRecipientSnapshots = async (
+    messages: readonly IChatMessage[],
+    choirId: Types.ObjectId
+): Promise<void> => {
+    const messagesWithoutSnapshot = messages.filter(
+        (message) => message.recipientUserIds.length === 0
+    );
+
+    if (messagesWithoutSnapshot.length === 0) {
+        return;
+    }
+
+    const activeRecipientIds = await findActiveChoirRecipientIds(choirId);
+
+    await Promise.all(messagesWithoutSnapshot.map(async (message) => {
+        const authorReference = message.author as Types.ObjectId | PopulatedAuthorReference;
+        const authorId = authorReference instanceof Types.ObjectId
+            ? authorReference
+            : authorReference._id;
+        const recipientUserIds = activeRecipientIds.filter(
+            (recipientUserId) => !recipientUserId.equals(authorId)
+        );
+        message.recipientUserIds = [...recipientUserIds];
+        await ChatMessage.updateOne(
+            { _id: message._id, recipientUserIds: { $size: 0 } },
+            { $set: { recipientUserIds } }
+        );
+    }));
+};
+
+const getReceiptTimestamp = (
+    receipts: readonly ChatReceiptEntry[],
+    userId: Types.ObjectId
+): string | null => {
+    const receipt = receipts.find((item) => item.user.equals(userId));
+    return receipt ? receipt.at.toISOString() : null;
+};
+
 export const listChatHistoryController = async (
     req: RequestWithUser,
     res: Response
@@ -206,6 +310,7 @@ export const listChatHistoryController = async (
         .populate(replyPopulate)
         .populate(chatMediaPopulate);
 
+    await ensureRecipientSnapshots(messages, choirId);
     sendCacheableJson(req, res, messages.reverse(), syncStartedAt);
 };
 
@@ -253,6 +358,7 @@ export const listChatMediaController = async (
         .populate(replyPopulate)
         .populate(chatMediaPopulate);
 
+    await ensureRecipientSnapshots(messages, choirId);
     sendCacheableJson(req, res, messages, syncStartedAt);
 };
 
@@ -294,6 +400,11 @@ export const createChatMessageController = async (
         assertChatMediaMatchesType(input.type, asset.mimeType);
     }
 
+    const recipientUserIds = await findActiveChoirRecipientIds(
+        choirId,
+        [actorUserId]
+    );
+    const now = new Date();
     const message = await ChatMessage.create({
         content: input.content,
         type: input.type,
@@ -313,8 +424,11 @@ export const createChatMessageController = async (
         createdBy: actorUserId,
         choirId,
         reactions: [],
+        recipientUserIds,
         deliveredTo: [actorUserId],
-        readBy: [actorUserId]
+        readBy: [actorUserId],
+        deliveryReceipts: [{ user: actorUserId, at: now }],
+        readReceipts: [{ user: actorUserId, at: now }]
     }).catch(async (error: Error) => {
         if (asset) {
             await discardPendingMedia(asset._id, choirId, 'Chat message creation failed');
@@ -335,6 +449,20 @@ export const createChatMessageController = async (
         action: 'create',
         referenceId: message.id,
         changes: { after: message.toObject() }
+    });
+
+    const senderName = req.user?.name ?? req.user?.username ?? 'Usuario';
+    await createNotifications({
+        choirId,
+        actorUserId,
+        recipientUserIds,
+        category: 'CHAT',
+        type: 'CHAT_MESSAGE',
+        title: `Nuevo mensaje de ${senderName}`,
+        body: getChatNotificationBody(input.type, input.content, asset?.originalName ?? ''),
+        resourceId: message._id,
+        dedupeKey: `CHAT_MESSAGE:${message.id}`,
+        io: getSocketServer(req)
     });
 
     await notifyCommunity(
@@ -358,36 +486,98 @@ export const markChatReceiptsController = async (
     const messageIds = input.messageIds.map((messageId) =>
         parseObjectId(messageId, 'messageIds')
     );
-    const filters: FilterQuery<IChatMessage> = {
+    const messages = await ChatMessage.find({
         _id: { $in: messageIds },
         choirId,
         author: { $ne: actorUserId }
-    };
-
-    if (input.status === 'READ') {
-        await ChatMessage.updateMany(filters, {
-            $addToSet: {
-                deliveredTo: actorUserId,
-                readBy: actorUserId
-            }
-        });
-    } else {
-        await ChatMessage.updateMany(filters, {
-            $addToSet: { deliveredTo: actorUserId }
-        });
-    }
-
-    const messages = await ChatMessage.find({
-        _id: { $in: messageIds },
-        choirId
     });
+    const now = new Date();
 
     for (const message of messages) {
+        if (!hasObjectId(message.deliveredTo, actorUserId)) {
+            message.deliveredTo.push(actorUserId);
+        }
+
+        if (!hasReceipt(message.deliveryReceipts, actorUserId)) {
+            message.deliveryReceipts.push({ user: actorUserId, at: now });
+        }
+
+        if (input.status === 'READ') {
+            if (!hasObjectId(message.readBy, actorUserId)) {
+                message.readBy.push(actorUserId);
+            }
+
+            if (!hasReceipt(message.readReceipts, actorUserId)) {
+                message.readReceipts.push({ user: actorUserId, at: now });
+            }
+        }
+
+        await message.save();
         await populateMessage(message);
         emitMessage(req, 'message-updated', message);
     }
 
+    if (input.status === 'READ') {
+        await markNotificationResourcesRead(
+            actorUserId,
+            choirId,
+            'CHAT',
+            messageIds,
+            getSocketServer(req)
+        );
+    }
+
     res.json({ messages });
+};
+
+export const getChatMessageDetailsController = async (
+    req: RequestWithUser & { params: ChatMessageParams },
+    res: Response
+): Promise<void> => {
+    const choirId = requireEffectiveChoirObjectId(req);
+    const actorUserId = requireAuthenticatedUserId(req);
+    const message = await ChatMessage.findOne({
+        _id: parseObjectId(req.params.messageId, 'messageId'),
+        choirId,
+        author: actorUserId
+    });
+
+    if (!message) {
+        throw new AppError(404, 'CHAT_MESSAGE_NOT_FOUND', 'Message not found');
+    }
+
+    await ensureRecipientSnapshots([message], choirId);
+    const recipients = await User.find({
+        _id: { $in: message.recipientUserIds },
+        choirId
+    })
+        .select('name username imageUrl')
+        .sort({ name: 1 });
+    const details: readonly MessageRecipientDetail[] = recipients.map((recipient) => {
+        const read = hasObjectId(message.readBy, recipient._id);
+        const delivered = hasObjectId(message.deliveredTo, recipient._id);
+
+        return {
+            user: {
+                id: recipient.id,
+                name: recipient.name,
+                username: recipient.username,
+                imageUrl: recipient.imageUrl ?? ''
+            },
+            status: read ? 'READ' : delivered ? 'DELIVERED' : 'PENDING',
+            deliveredAt: getReceiptTimestamp(message.deliveryReceipts, recipient._id),
+            readAt: getReceiptTimestamp(message.readReceipts, recipient._id)
+        };
+    });
+
+    res.json({
+        messageId: message.id,
+        createdAt: message.createdAt.toISOString(),
+        recipientCount: details.length,
+        deliveredCount: details.filter((detail) => detail.status !== 'PENDING').length,
+        readCount: details.filter((detail) => detail.status === 'READ').length,
+        recipients: details
+    });
 };
 
 export const uploadChatImageController = async (
@@ -445,9 +635,35 @@ export const toggleChatReactionController = async (
         message.reactions.push({ user: userId, emoji });
     }
 
+    const messageAuthorId = message.author;
     await message.save();
     await populateMessage(message);
     emitMessage(req, 'message-updated', message);
+
+    const dedupeKey = `CHAT_REACTION:${message.id}:${userId.toString()}`;
+
+    if (!messageAuthorId.equals(userId)) {
+        if (action === 'remove_reaction') {
+            await removeNotification({
+                recipientUserId: messageAuthorId,
+                dedupeKey,
+                io: getSocketServer(req)
+            });
+        } else {
+            await createNotifications({
+                choirId,
+                actorUserId: userId,
+                recipientUserIds: [messageAuthorId],
+                category: 'CHAT',
+                type: 'CHAT_REACTION',
+                title: `${req.user?.name ?? 'Alguien'} reaccionó a tu mensaje`,
+                body: emoji,
+                resourceId: message._id,
+                dedupeKey,
+                io: getSocketServer(req)
+            });
+        }
+    }
 
     await registerLog({
         req,

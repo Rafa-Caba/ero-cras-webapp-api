@@ -11,6 +11,12 @@ import {
 } from '../services/media.service';
 import { sendCacheableJson } from '../services/httpCache.service';
 import {
+    createChoirNotifications,
+    createNotifications,
+    removeNotification,
+    removeResourceNotifications
+} from '../services/notification.service';
+import {
     buildTenantResourceFilter,
     createTenantResourceNotFoundError,
     requireAuthenticatedUserId,
@@ -18,6 +24,7 @@ import {
     requireEffectiveChoirObjectId
 } from '../services/tenantScope.service';
 import type { RequestWithUser } from '../types/auth.types';
+import type { ChoirSocketServer } from '../types/socket.types';
 import { registerLog } from '../utils/logger';
 import { notifyCommunity } from '../utils/notificationHelper';
 import {
@@ -30,6 +37,12 @@ import { parseBlogInput } from '../validations/schemas/resource.schemas';
 interface ResourceParams {
     readonly id: string;
 }
+
+
+const getSocketServer = (req: RequestWithUser): ChoirSocketServer | undefined => {
+    const io: ChoirSocketServer | undefined = req.app.get('io');
+    return io;
+};
 
 const findPost = async (
     id: string,
@@ -121,6 +134,18 @@ export const createBlogPostController = async (
         action: 'create',
         referenceId: post.id,
         changes: { after: post.toObject() }
+    });
+
+    await createChoirNotifications({
+        choirId,
+        actorUserId,
+        category: 'BLOG',
+        type: 'BLOG_POST',
+        title: `Nueva publicación de ${req.user?.name ?? 'un miembro'}`,
+        body: post.title,
+        resourceId: post._id,
+        dedupeKey: `BLOG_POST:${post.id}`,
+        io: getSocketServer(req)
     });
 
     if (post.isPublic) {
@@ -223,6 +248,31 @@ export const toggleBlogLikeController = async (
     post.likes = post.likesUsers.length;
     await post.save();
 
+    const dedupeKey = `BLOG_REACTION:${post.id}:${userId.toString()}`;
+
+    if (!post.author.equals(userId)) {
+        if (existingIndex >= 0) {
+            await removeNotification({
+                recipientUserId: post.author,
+                dedupeKey,
+                io: getSocketServer(req)
+            });
+        } else {
+            await createNotifications({
+                choirId: requireEffectiveChoirObjectId(req),
+                actorUserId: userId,
+                recipientUserIds: [post.author],
+                category: 'BLOG',
+                type: 'BLOG_REACTION',
+                title: `${req.user?.name ?? 'Alguien'} reaccionó a tu publicación`,
+                body: post.title,
+                resourceId: post._id,
+                dedupeKey,
+                io: getSocketServer(req)
+            });
+        }
+    }
+
     await registerLog({
         req,
         collection: 'BlogPosts',
@@ -243,13 +293,34 @@ export const addBlogCommentController = async (
         requireEffectiveChoirObjectId(req)
     );
     const text = readRequiredContent(parseRequestBody(req), 'text');
+    const actorUserId = requireAuthenticatedUserId(req);
     post.comments.push({
         author: req.user?.username ?? req.user?.name ?? 'User',
+        authorUserId: actorUserId,
         text,
         date: new Date()
     });
     await post.save();
-    res.status(201).json(post.comments[post.comments.length - 1]);
+
+    const comment = post.comments[post.comments.length - 1];
+
+    if (!post.author.equals(actorUserId) && comment._id) {
+        await createNotifications({
+            choirId: requireEffectiveChoirObjectId(req),
+            actorUserId,
+            recipientUserIds: [post.author],
+            category: 'BLOG',
+            type: 'BLOG_COMMENT',
+            title: `${req.user?.name ?? 'Alguien'} comentó tu publicación`,
+            body: post.title,
+            resourceId: post._id,
+            resourceSubId: comment._id,
+            dedupeKey: `BLOG_COMMENT:${post.id}:${comment._id.toString()}`,
+            io: getSocketServer(req)
+        });
+    }
+
+    res.status(201).json(comment);
 };
 
 export const deleteBlogPostController = async (
@@ -266,6 +337,12 @@ export const deleteBlogPostController = async (
         choirId,
         ownerType: 'BLOG',
         ownerId: post._id
+    });
+    await removeResourceNotifications({
+        choirId,
+        category: 'BLOG',
+        resourceId: post._id,
+        io: getSocketServer(req)
     });
 
     await registerLog({

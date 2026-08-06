@@ -30,6 +30,11 @@ const targets = [
     'src/controllers/blog.controller.ts',
     'src/middlewares/requestTiming.ts',
     'src/utils/notificationHelper.ts',
+    'src/types/notification.types.ts',
+    'src/services/notification.service.ts',
+    'src/routes/notification.ts',
+    'src/models/Notification.ts',
+    'src/controllers/notification.controller.ts',
 ];
 
 const prohibitedPatterns = [
