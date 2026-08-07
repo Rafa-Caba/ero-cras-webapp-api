@@ -6,6 +6,10 @@ export interface PublicChoirParams {
     readonly choirCode: string;
 }
 
+export interface PublicBlogParams extends PublicChoirParams {
+    readonly postId: string;
+}
+
 export const parsePublicChoirCode = (value: string): string => {
     const normalizedValue = value.trim().toLowerCase();
     const codePattern = /^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/;

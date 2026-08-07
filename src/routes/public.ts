@@ -2,6 +2,7 @@
 
 import { Router } from 'express';
 import {
+    getPublicBlogPostController,
     getPublicSettingsController,
     listPublicAnnouncementsController,
     listPublicBlogController,
@@ -18,6 +19,7 @@ const router = Router({ mergeParams: true });
 router.get('/settings', getPublicSettingsController);
 router.get('/announcements', listPublicAnnouncementsController);
 router.get('/blog', listPublicBlogController);
+router.get('/blog/:postId', getPublicBlogPostController);
 router.get('/gallery', listPublicGalleryController);
 router.get('/songs', listPublicSongsController);
 router.get('/song-types', listPublicSongTypesController);

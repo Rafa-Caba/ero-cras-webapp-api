@@ -12,6 +12,7 @@ import SongType from '../models/SongType';
 import Theme from '../models/Theme';
 import { AppError } from '../errors/AppError';
 import type { PublicChoirContext } from '../types/public.types';
+import { parseObjectId } from '../validations/schemas/common.schemas';
 import { parsePublicChoirCode } from '../validations/schemas/public.schemas';
 
 export const resolvePublicChoir = async (
@@ -81,6 +82,30 @@ export const listPublicBlogPosts = async (choir: PublicChoirContext) => {
         .populate('author', 'name username imageUrl')
         .sort({ createdAt: -1 })
         .lean();
+};
+
+export const getPublicBlogPost = async (
+    choir: PublicChoirContext,
+    postId: string
+) => {
+    const post = await BlogPost.findOne({
+        _id: parseObjectId(postId, 'postId'),
+        choirId: choir.id,
+        isPublic: true
+    })
+        .select('title content imageUrl author likes comments createdAt updatedAt')
+        .populate('author', 'name username imageUrl')
+        .lean();
+
+    if (!post) {
+        throw new AppError(
+            404,
+            'PUBLIC_BLOG_POST_NOT_FOUND',
+            'The requested public blog post was not found'
+        );
+    }
+
+    return post;
 };
 
 export const listPublicGallery = async (choir: PublicChoirContext) => {

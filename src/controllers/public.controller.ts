@@ -2,6 +2,7 @@
 
 import type { Request, Response } from 'express';
 import {
+    getPublicBlogPost,
     getPublicSettings,
     listPublicAnnouncements,
     listPublicBlogPosts,
@@ -13,7 +14,10 @@ import {
     listPublicThemes,
     resolvePublicChoir
 } from '../services/publicContent.service';
-import type { PublicChoirParams } from '../validations/schemas/public.schemas';
+import type {
+    PublicBlogParams,
+    PublicChoirParams
+} from '../validations/schemas/public.schemas';
 
 const resolveChoirFromRequest = (req: Request<PublicChoirParams>) => {
     return resolvePublicChoir(req.params.choirCode);
@@ -38,6 +42,16 @@ export const listPublicBlogController = async (
     res: Response
 ): Promise<void> => {
     res.json(await listPublicBlogPosts(await resolveChoirFromRequest(req)));
+};
+
+export const getPublicBlogPostController = async (
+    req: Request<PublicBlogParams>,
+    res: Response
+): Promise<void> => {
+    res.json(await getPublicBlogPost(
+        await resolveChoirFromRequest(req),
+        req.params.postId
+    ));
 };
 
 export const listPublicGalleryController = async (
